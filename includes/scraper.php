@@ -226,7 +226,7 @@ class Scraper
         wp_scholar_log("Failed to get attachment URL for avatar ID: $attach_id");
         return '';
       }
-    } catch (Exception $e) {
+    } catch (\Exception $e) {
       wp_scholar_log("Exception during avatar download: " . $e->getMessage());
       if ($cleanup_temp && isset($file_array['tmp_name']) && file_exists($file_array['tmp_name'])) {
         unlink($file_array['tmp_name']);
@@ -462,7 +462,7 @@ class Scraper
       wp_scholar_log(sprintf("Successfully scraped profile %s with %d publications", $profile_id, count($all_publications)));
 
       return $main_data;
-    } catch (Exception $e) {
+    } catch (\Exception $e) {
       wp_scholar_log("Exception during scraping: " . $e->getMessage());
       $this->last_error_details = array(
         'type' => 'exception',
@@ -1069,6 +1069,45 @@ class Scraper
     if (isset($config['request_delay'])) {
       $this->request_delay = max(0.5, min(5, floatval($config['request_delay'])));
     }
+  }
+
+  /**
+   * Validate scraped data to ensure it's complete and reasonable
+   */
+  public static function validate_scraped_data($data)
+  {
+    if (!is_array($data)) {
+      wp_scholar_log("Data validation failed: not an array");
+      return false;
+    }
+
+    // Check for required fields
+    $required_fields = ['name', 'publications'];
+    foreach ($required_fields as $field) {
+      if (!isset($data[$field]) || empty($data[$field])) {
+        wp_scholar_log("Data validation failed: missing required field '$field'");
+        return false;
+      }
+    }
+
+    // Check if publications array is reasonable
+    if (!is_array($data['publications'])) {
+      wp_scholar_log("Data validation failed: publications is not an array");
+      return false;
+    }
+
+    // Basic sanity check - if someone has 0 publications, that might be suspicious
+    // unless it's a new profile
+    if (count($data['publications']) === 0) {
+      $existing_data = get_option('scholar_profile_data');
+      if ($existing_data && count($existing_data['publications']) > 0) {
+        wp_scholar_log("Data validation warning: new data has 0 publications but existing data has publications");
+        return false;
+      }
+    }
+
+    wp_scholar_log("Data validation passed: " . count($data['publications']) . " publications found");
+    return true;
   }
 
   /**

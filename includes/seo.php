@@ -10,11 +10,6 @@ class SEO
 {
   private $has_output = false; // Prevent duplicate output
 
-  public function __construct()
-  {
-    add_action('wp_head', array($this, 'output_scholar_tags'), 15); // After SEO plugins
-  }
-
   /**
    * Add SEO enhancements for scholar profile
    */
@@ -24,23 +19,21 @@ class SEO
       return;
     }
 
-    // Store scholar data globally for output
-    global $scholar_profile_seo_data;
-    $scholar_profile_seo_data = $data;
+    // Output academic meta tags via wp_footer (shortcode hasn't run yet during wp_head)
+    add_action('wp_footer', function () use ($data) {
+      $this->output_scholar_tags($data);
+    });
   }
 
   /**
    * Output only Scholar-specific SEO tags
    */
-  public function output_scholar_tags()
+  public function output_scholar_tags($data)
   {
-    global $scholar_profile_seo_data;
-
-    if (empty($scholar_profile_seo_data) || $this->has_output) {
+    if (empty($data) || $this->has_output) {
       return;
     }
 
-    $data = $scholar_profile_seo_data;
     $this->has_output = true;
 
     echo "\n<!-- Scholar Profile Academic Tags -->\n";
@@ -97,10 +90,6 @@ class SEO
    */
   private function output_structured_data($data, $publications)
   {
-    if ($this->has_output) {
-      return;
-    }
-
     echo "\n<!-- Scholar Profile Structured Data -->\n";
 
     // Person schema with academic focus

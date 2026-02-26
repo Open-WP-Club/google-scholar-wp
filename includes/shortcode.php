@@ -14,6 +14,21 @@ class Shortcode
 
   public function render_profile($atts)
   {
+    // Enqueue assets only on pages with this shortcode
+    wp_enqueue_style(
+      'scholar-profile-styles',
+      WP_SCHOLAR_PLUGIN_URL . 'assets/css/style.css',
+      array(),
+      WP_SCHOLAR_VERSION
+    );
+    wp_enqueue_script(
+      'scholar-profile-sorting',
+      WP_SCHOLAR_PLUGIN_URL . 'assets/js/scholar-sorting.js',
+      array(),
+      WP_SCHOLAR_VERSION,
+      true
+    );
+
     // Parse shortcode attributes
     $atts = shortcode_atts(array(
       'sort_by' => '',
@@ -174,25 +189,6 @@ class Shortcode
     }
 
     return $message;
-  }
-
-  /**
-   * Render error message for display issues
-   */
-  protected function render_error_message($message = '')
-  {
-    $default_message = __('Unable to display profile data. Please contact the site administrator.', 'wp-google-scholar');
-    $display_message = !empty($message) ? $message : $default_message;
-
-    return sprintf(
-      '<div class="scholar-error-message">
-        <p class="scholar-error">
-          <span class="scholar-error-icon">⚠️</span>
-          %s
-        </p>
-      </div>',
-      esc_html($display_message)
-    );
   }
 
   /**
@@ -649,9 +645,6 @@ class Shortcode
 
       switch ($sort_by) {
         case 'year':
-          $value_a = intval($value_a);
-          $value_b = intval($value_b);
-          break;
         case 'citations':
           $value_a = intval($value_a);
           $value_b = intval($value_b);

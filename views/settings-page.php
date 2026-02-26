@@ -47,10 +47,10 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
               'strong' => array(),
               'em' => array(),
               'br' => array(),
-              'ul' => array('style' => array()),
-              'li' => array('style' => array()),
-              'div' => array('style' => array()),
-              'span' => array('style' => array())
+              'ul' => array('class' => array()),
+              'li' => array(),
+              'div' => array('class' => array()),
+              'span' => array('class' => array())
             ));
           } else {
             echo esc_html($message['message']);
@@ -180,7 +180,7 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
                   </select>
                   <p class="description">
                     <?php _e('Maximum number of publications to fetch from Google Scholar. Higher numbers take longer to process.', 'wp-google-scholar'); ?>
-                    <br><strong style="color: #d63638;"><?php _e('⚠️ Warning:', 'wp-google-scholar'); ?></strong>
+                    <br><strong class="scholar-warning-text"><?php _e('⚠️ Warning:', 'wp-google-scholar'); ?></strong>
                     <?php _e('Fetching large numbers of publications (500+) may temporarily trigger IP rate limiting from Google Scholar. Use higher limits sparingly and consider longer update intervals.', 'wp-google-scholar'); ?>
                   </p>
                 </td>
@@ -384,16 +384,16 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
 
         <!-- Enhanced Rate Limiting Notice -->
         <div class="scholar-notice-card">
-          <h3 style="color: #d63638; display: flex; align-items: center; gap: 8px;">
-            <span class="dashicons dashicons-warning" style="font-size: 16px;"></span>
+          <h3>
+            <span class="dashicons dashicons-warning"></span>
             <?php _e('Common Issues & Solutions', 'wp-google-scholar'); ?>
           </h3>
 
           <!-- HTTP 403 Blocked Access -->
           <div class="scholar-troubleshooting-section">
-            <h4 style="margin: 16px 0 8px 0; font-size: 14px;">🔒 <?php _e('Server Access Blocked (HTTP 403)', 'wp-google-scholar'); ?></h4>
-            <p style="margin: 4px 0; font-size: 13px; color: #666;"><?php _e('Most common issue. Google Scholar temporarily blocks server IPs.', 'wp-google-scholar'); ?></p>
-            <ul class="scholar-notice-list" style="margin: 8px 0 16px 16px; font-size: 13px;">
+            <h4>🔒 <?php _e('Server Access Blocked (HTTP 403)', 'wp-google-scholar'); ?></h4>
+            <p><?php _e('Most common issue. Google Scholar temporarily blocks server IPs.', 'wp-google-scholar'); ?></p>
+            <ul class="scholar-notice-list">
               <li><?php _e('Wait 1-2 hours and try again', 'wp-google-scholar'); ?></li>
               <li><?php _e('Contact your hosting provider if it persists', 'wp-google-scholar'); ?></li>
               <li><?php _e('Use monthly updates instead of daily/weekly', 'wp-google-scholar'); ?></li>
@@ -402,15 +402,15 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
 
           <!-- Profile Issues -->
           <div class="scholar-troubleshooting-section">
-            <h4 style="margin: 16px 0 8px 0; font-size: 14px;">👤 <?php _e('Profile Not Found (HTTP 404)', 'wp-google-scholar'); ?></h4>
-            <ul class="scholar-notice-list" style="margin: 8px 0 16px 16px; font-size: 13px;">
+            <h4>👤 <?php _e('Profile Not Found (HTTP 404)', 'wp-google-scholar'); ?></h4>
+            <ul class="scholar-notice-list">
               <li><?php _e('Double-check your Profile ID format', 'wp-google-scholar'); ?></li>
               <li><?php _e('Make sure your profile is set to public', 'wp-google-scholar'); ?></li>
               <li><?php _e('Test the profile URL in your browser first', 'wp-google-scholar'); ?></li>
             </ul>
           </div>
 
-          <p class="scholar-notice-recommendation" style="margin-top: 16px;">
+          <p class="scholar-notice-recommendation">
             <strong><?php _e('💡 Best Practice:', 'wp-google-scholar'); ?></strong>
             <?php _e('Set up automatic monthly updates and avoid frequent manual refreshes to prevent IP blocks.', 'wp-google-scholar'); ?>
           </p>

@@ -15,10 +15,15 @@ class Scheduler
   private const MAX_RETRY_DELAY = 86400; // 24 hours in seconds
   private const FAILURE_THRESHOLD_FOR_BACKOFF = 3; // Start backoff after 3 failures
 
+  private static $hooks_registered = false;
+
   public function __construct()
   {
-    add_filter('cron_schedules', array($this, 'add_schedules'));
-    add_action($this->hook, array($this, 'update_profile'));
+    if (!self::$hooks_registered) {
+      add_filter('cron_schedules', array($this, 'add_schedules'));
+      add_action($this->hook, array($this, 'update_profile'));
+      self::$hooks_registered = true;
+    }
   }
 
   /**
@@ -108,7 +113,7 @@ class Scheduler
 
     $data = $scraper->scrape($options['profile_id']);
 
-    if ($data && $this->validate_scraped_data($data)) {
+    if ($data && Scraper::validate_scraped_data($data)) {
       // Store the new data
       update_option('scholar_profile_data', $data);
       update_option('scholar_profile_last_update', time());
@@ -339,46 +344,6 @@ class Scheduler
 
     wp_mail($admin_email, $subject, $message);
     wp_scholar_log("Enhanced failure notification sent to admin: $admin_email - Error type: " . ($error_details['type'] ?? 'unknown'));
-  }
-
-  /**
-   * Validate scraped data to ensure it's complete and reasonable
-   */
-  private function validate_scraped_data($data)
-  {
-    if (!is_array($data)) {
-      wp_scholar_log("Data validation failed: not an array");
-      return false;
-    }
-
-    // Check for required fields
-    $required_fields = ['name', 'publications'];
-    foreach ($required_fields as $field) {
-      if (!isset($data[$field]) || empty($data[$field])) {
-        wp_scholar_log("Data validation failed: missing required field '$field'");
-        return false;
-      }
-    }
-
-    // Check if publications array is reasonable
-    if (!is_array($data['publications'])) {
-      wp_scholar_log("Data validation failed: publications is not an array");
-      return false;
-    }
-
-    // Basic sanity check - if someone has 0 publications, that might be suspicious
-    // unless it's a new profile
-    if (count($data['publications']) === 0) {
-      $existing_data = get_option('scholar_profile_data');
-      if ($existing_data && count($existing_data['publications']) > 0) {
-        wp_scholar_log("Data validation warning: new data has 0 publications but existing data has publications");
-        // This could be a scraping error - let's be cautious
-        return false;
-      }
-    }
-
-    wp_scholar_log("Data validation passed: " . count($data['publications']) . " publications found");
-    return true;
   }
 
   /**

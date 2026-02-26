@@ -750,6 +750,60 @@
     font-size: 0.8125rem;
   }
 }
+/* Troubleshooting Card */
+.scholar-notice-card h3 {
+  color: #d63638;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.scholar-notice-card h3 .dashicons {
+  font-size: 1rem;
+}
+
+.scholar-troubleshooting-section h4 {
+  margin: 1rem 0 0.5rem 0;
+  font-size: 0.875rem;
+}
+
+.scholar-troubleshooting-section p {
+  margin: 0.25rem 0;
+  font-size: 0.8125rem;
+  color: #666;
+}
+
+.scholar-troubleshooting-section .scholar-notice-list {
+  margin: 0.5rem 0 1rem 1rem;
+  font-size: 0.8125rem;
+}
+
+.scholar-notice-recommendation {
+  margin-top: 1rem;
+}
+
+.scholar-warning-text {
+  color: #d63638;
+}
+
+/* Error detail styles (admin notices) */
+.scholar-error-suggestions {
+  margin-left: 1.25rem;
+  margin-top: 0.5rem;
+}
+
+.scholar-error-suggestions li {
+  margin-bottom: 0.25rem;
+}
+
+.scholar-error-blocked-notice {
+  background: #fff3cd;
+  border: 0.0625rem solid #ffeaa7;
+  padding: 0.75rem;
+  border-radius: 0.25rem;
+  margin-top: 0.75rem;
+}
+
 /* Enhanced status message styles */
 .scholar-error-message,
 .scholar-no-data-message,

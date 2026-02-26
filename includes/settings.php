@@ -186,7 +186,7 @@ class Settings
 
     $data = $scraper->scrape($options['profile_id']);
 
-    if ($data && $this->validate_scraped_data($data)) {
+    if ($data && Scraper::validate_scraped_data($data)) {
       update_option('scholar_profile_data', $data);
       update_option('scholar_profile_last_update', time());
 
@@ -274,44 +274,6 @@ class Settings
       admin_url('options-general.php')
     ));
     exit;
-  }
-
-  /**
-   * Validate scraped data (same as in Scheduler)
-   */
-  private function validate_scraped_data($data)
-  {
-    if (!is_array($data)) {
-      wp_scholar_log("Data validation failed: not an array", 'error');
-      return false;
-    }
-
-    // Check for required fields
-    $required_fields = ['name', 'publications'];
-    foreach ($required_fields as $field) {
-      if (!isset($data[$field]) || empty($data[$field])) {
-        wp_scholar_log("Data validation failed: missing required field '$field'");
-        return false;
-      }
-    }
-
-    // Check if publications array is reasonable
-    if (!is_array($data['publications'])) {
-      wp_scholar_log("Data validation failed: publications is not an array");
-      return false;
-    }
-
-    // Basic sanity check for empty publications
-    if (count($data['publications']) === 0) {
-      $existing_data = get_option('scholar_profile_data');
-      if ($existing_data && count($existing_data['publications']) > 0) {
-        wp_scholar_log("Data validation warning: new data has 0 publications but existing data has publications");
-        return false;
-      }
-    }
-
-    wp_scholar_log("Data validation passed: " . count($data['publications']) . " publications found");
-    return true;
   }
 
   public function render_settings_page()
@@ -443,16 +405,16 @@ class Settings
 
     if (!empty($error_details['suggestions']) && is_array($error_details['suggestions'])) {
       $message .= '<br><br><strong>' . __('What you can try:', 'wp-google-scholar') . '</strong>';
-      $message .= '<ul style="margin-left: 20px; margin-top: 8px;">';
+      $message .= '<ul class="scholar-error-suggestions">';
       foreach ($error_details['suggestions'] as $suggestion) {
-        $message .= '<li style="margin-bottom: 4px;">' . esc_html($suggestion) . '</li>';
+        $message .= '<li>' . esc_html($suggestion) . '</li>';
       }
       $message .= '</ul>';
     }
 
     // Add specific guidance for blocked access (403 errors)
     if ($error_details['type'] === 'blocked_access') {
-      $message .= '<br><div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 12px; border-radius: 4px; margin-top: 12px;">';
+      $message .= '<br><div class="scholar-error-blocked-notice">';
       $message .= '<strong>🔒 ' . __('Server Access Blocked', 'wp-google-scholar') . '</strong><br>';
       $message .= __('This is the most common issue and is usually temporary. Google Scholar blocks server IPs that make too many requests.', 'wp-google-scholar');
       $message .= '<br><strong>' . __('Recommended action:', 'wp-google-scholar') . '</strong> ';

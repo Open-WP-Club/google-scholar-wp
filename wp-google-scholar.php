@@ -58,29 +58,6 @@ function wp_scholar_init()
   new WPScholar\Settings();
   new WPScholar\Shortcode();
   new WPScholar\Scheduler();
-  new WPScholar\SEO(); // Initialize SEO class
-
-  // Enqueue styles
-  add_action('wp_enqueue_scripts', 'wp_scholar_enqueue_styles');
-}
-
-// Enqueue frontend styles
-function wp_scholar_enqueue_styles()
-{
-  wp_enqueue_style(
-    'scholar-profile-styles',
-    WP_SCHOLAR_PLUGIN_URL . 'assets/css/style.css',
-    array(),
-    WP_SCHOLAR_VERSION
-  );
-
-  wp_enqueue_script(
-    'scholar-profile-sorting',
-    WP_SCHOLAR_PLUGIN_URL . 'assets/js/scholar-sorting.js',
-    array(),
-    WP_SCHOLAR_VERSION,
-    true
-  );
 }
 
 // Enqueue admin styles
@@ -101,28 +78,6 @@ function wp_scholar_enqueue_admin_styles($hook)
   );
 }
 
-// Register plugin assets directory
-function wp_scholar_register_assets()
-{
-  // Create necessary directories if they don't exist
-  $assets_dir = WP_SCHOLAR_PLUGIN_DIR . 'assets';
-  $css_dir = $assets_dir . '/css';
-  $js_dir = $assets_dir . '/js';
-
-  if (!file_exists($assets_dir)) {
-    wp_mkdir_p($assets_dir);
-  }
-  if (!file_exists($css_dir)) {
-    wp_mkdir_p($css_dir);
-  }
-  if (!file_exists($js_dir)) {
-    wp_mkdir_p($js_dir);
-  }
-}
-
-// Run assets setup on plugin activation
-register_activation_hook(__FILE__, 'wp_scholar_register_assets');
-
 // Activation hook
 register_activation_hook(__FILE__, 'wp_scholar_activate');
 
@@ -130,9 +85,6 @@ function wp_scholar_activate()
 {
   // Log activation for debugging
   wp_scholar_log("Google Scholar Profile plugin activated - Version: " . WP_SCHOLAR_VERSION);
-
-  // Create assets directories
-  wp_scholar_register_assets();
 
   // Activate scheduler
   $scheduler = new WPScholar\Scheduler();
@@ -230,6 +182,11 @@ function wp_scholar_uninstall()
  */
 function wp_scholar_log($message, $level = 'info')
 {
+  // Only log if WP_DEBUG_LOG is enabled
+  if (!defined('WP_DEBUG_LOG') || WP_DEBUG_LOG !== true) {
+    return;
+  }
+
   // Define logging level priorities
   $levels = array(
     'debug' => 0,
@@ -238,18 +195,16 @@ function wp_scholar_log($message, $level = 'info')
     'error' => 3
   );
 
-  // Get minimum logging level from options (defaults to 'info')
-  // Can be set via: update_option('scholar_profile_log_level', 'debug');
-  $min_level = get_option('scholar_profile_log_level', 'info');
+  // Cache minimum logging level to avoid DB query on every call
+  static $cached_min_level = null;
+  if ($cached_min_level === null) {
+    $cached_min_level = get_option('scholar_profile_log_level', 'info');
+  }
+  $min_level = $cached_min_level;
 
   // If WP_DEBUG is true, log everything (debug level)
-  if (WP_DEBUG === true) {
+  if (defined('WP_DEBUG') && WP_DEBUG === true) {
     $min_level = 'debug';
-  }
-
-  // Only log if WP_DEBUG_LOG is enabled
-  if (WP_DEBUG_LOG !== true) {
-    return;
   }
 
   // Validate levels
