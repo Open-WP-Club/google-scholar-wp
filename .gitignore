@@ -1,2 +1,6 @@
 
 .DS_Store
+vendor/
+coverage/
+.phpunit.cache/
+composer.lock
