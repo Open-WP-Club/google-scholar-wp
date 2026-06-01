@@ -34,7 +34,17 @@ class Scheduler
   public function activate(): void
   {
     if (!wp_next_scheduled($this->hook)) {
-      wp_schedule_event(time(), 'weekly', $this->hook);
+      $options = get_option('scholar_profile_settings');
+      $frequency = $options['update_frequency'] ?? 'weekly';
+      $valid = ['daily', 'weekly', 'monthly', 'yearly'];
+      if (!in_array($frequency, $valid, true)) {
+        $frequency = 'weekly';
+      }
+      wp_schedule_event(time(), $frequency, $this->hook);
+    }
+
+    if (!wp_next_scheduled('scholar_profile_cleanup_errors')) {
+      wp_schedule_event(time(), 'weekly', 'scholar_profile_cleanup_errors');
     }
   }
 
@@ -121,7 +131,7 @@ class Scheduler
       // Update status to success
       $this->update_data_status('success', sprintf(
         'Successfully updated at %s - Found %d publications',
-        date('Y-m-d H:i:s'),
+        wp_date('Y-m-d H:i:s'),
         count($data['publications'])
       ));
 
@@ -133,7 +143,7 @@ class Scheduler
       wp_scholar_log(sprintf(
         'Google Scholar Profile updated for ID: %s at %s - Found %d publications',
         $options['profile_id'],
-        date('Y-m-d H:i:s'),
+        wp_date('Y-m-d H:i:s'),
         count($data['publications'])
       ));
     } else {
@@ -233,7 +243,7 @@ class Scheduler
     }
 
     // If we've had too many consecutive failures, consider more drastic action
-    if ($consecutive_failures >= 5) {
+    if ($consecutive_failures >= WP_SCHOLAR_MAX_CONSECUTIVE_FAILURES) {
       $this->handle_persistent_failures($profile_id, $consecutive_failures, $error_details);
     }
   }
@@ -246,7 +256,7 @@ class Scheduler
     wp_scholar_log("$failure_count consecutive failures for profile: $profile_id", 'warning');
 
     // Optionally send email notification to admin with enhanced details
-    if ($failure_count === 5) {
+    if ($failure_count === WP_SCHOLAR_MAX_CONSECUTIVE_FAILURES) {
       $this->send_failure_notification($profile_id, $failure_count, $error_details);
     }
 
@@ -336,7 +346,7 @@ class Scheduler
       $profile_id,
       $error_summary,
       get_option('scholar_profile_last_update') ?
-        date('Y-m-d H:i:s', get_option('scholar_profile_last_update')) : 'Never',
+        wp_date('Y-m-d H:i:s', get_option('scholar_profile_last_update')) : 'Never',
       home_url(),
       $recommendations,
       admin_url('options-general.php?page=scholar-profile-settings')

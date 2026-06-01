@@ -98,7 +98,7 @@ class Shortcode
     }
 
     // Main wrapper with pagination data
-    echo '<div class="scholar-profile" data-pagination=\'' . json_encode($pagination_data) . '\'>';
+    echo '<div class="scholar-profile" data-pagination="' . esc_attr(wp_json_encode($pagination_data)) . '">';
 
     // Main content section
     echo '<div class="scholar-main">';
@@ -438,16 +438,15 @@ class Shortcode
 
   protected function render_pagination($current_page, $total_pages)
   {
-    $base_url = esc_url_raw(strtok($_SERVER['REQUEST_URI'], '?'));
-    $query_params = isset($_GET) ? map_deep(wp_unslash($_GET), 'sanitize_text_field') : array();
+    // Use WordPress helpers to build URLs — avoids manipulating $_SERVER['REQUEST_URI'] directly
+    $base_url = remove_query_arg('scholar_page');
 
     echo '<nav class="scholar-pagination" role="navigation" aria-label="' . __('Publications pagination', 'wp-google-scholar') . '">
             <div class="scholar-pagination-wrapper">';
 
     // Previous button
     if ($current_page > 1) {
-      $query_params['scholar_page'] = $current_page - 1;
-      $prev_url = $base_url . '?' . http_build_query($query_params);
+      $prev_url = add_query_arg('scholar_page', $current_page - 1, $base_url);
       echo '<a href="' . esc_url($prev_url) . '" class="scholar-pagination-btn scholar-pagination-prev" aria-label="' . __('Previous page', 'wp-google-scholar') . '">
                 <span aria-hidden="true">‹</span>
                 <span class="scholar-pagination-text">' . __('Previous', 'wp-google-scholar') . '</span>
@@ -467,8 +466,7 @@ class Shortcode
 
     // First page + ellipsis if needed
     if ($start_page > 1) {
-      $query_params['scholar_page'] = 1;
-      $first_url = $base_url . '?' . http_build_query($query_params);
+      $first_url = add_query_arg('scholar_page', 1, $base_url);
       echo '<a href="' . esc_url($first_url) . '" class="scholar-pagination-number" aria-label="' . __('Go to page 1', 'wp-google-scholar') . '">1</a>';
 
       if ($start_page > 2) {
@@ -482,8 +480,7 @@ class Shortcode
         // translators: %d is the page number
         echo '<span class="scholar-pagination-number current" aria-current="page" aria-label="' . sprintf(__('Page %d, current page', 'wp-google-scholar'), $page) . '">' . $page . '</span>';
       } else {
-        $query_params['scholar_page'] = $page;
-        $page_url = $base_url . '?' . http_build_query($query_params);
+        $page_url = add_query_arg('scholar_page', $page, $base_url);
         // translators: %d is the page number
         echo '<a href="' . esc_url($page_url) . '" class="scholar-pagination-number" aria-label="' . sprintf(__('Go to page %d', 'wp-google-scholar'), $page) . '">' . $page . '</a>';
       }
@@ -495,8 +492,7 @@ class Shortcode
         echo '<span class="scholar-pagination-ellipsis" aria-hidden="true">…</span>';
       }
 
-      $query_params['scholar_page'] = $total_pages;
-      $last_url = $base_url . '?' . http_build_query($query_params);
+      $last_url = add_query_arg('scholar_page', $total_pages, $base_url);
       // translators: %d is the last page number
       echo '<a href="' . esc_url($last_url) . '" class="scholar-pagination-number" aria-label="' . sprintf(__('Go to page %d', 'wp-google-scholar'), $total_pages) . '">' . $total_pages . '</a>';
     }
@@ -505,8 +501,7 @@ class Shortcode
 
     // Next button
     if ($current_page < $total_pages) {
-      $query_params['scholar_page'] = $current_page + 1;
-      $next_url = $base_url . '?' . http_build_query($query_params);
+      $next_url = add_query_arg('scholar_page', $current_page + 1, $base_url);
       echo '<a href="' . esc_url($next_url) . '" class="scholar-pagination-btn scholar-pagination-next" aria-label="' . __('Next page', 'wp-google-scholar') . '">
                 <span class="scholar-pagination-text">' . __('Next', 'wp-google-scholar') . '</span>
                 <span aria-hidden="true">›</span>

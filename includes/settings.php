@@ -12,9 +12,8 @@ class Settings
   private $page_slug = 'scholar-profile-settings';
 
   // Constants for validation and rate limiting
-  private const REFRESH_COOLDOWN_SECONDS = 300; // 5 minutes
-  private const MAX_CONSECUTIVE_FAILURES_THRESHOLD = 5;
-  private const MIN_PROFILE_ID_LENGTH = 8;
+  public const REFRESH_COOLDOWN_SECONDS = 300; // 5 minutes
+private const MIN_PROFILE_ID_LENGTH = 8;
   private const MAX_PROFILE_ID_LENGTH = 20;
   public const DATA_STALE_AGE_DAYS = 90; // Public so Scheduler can access it
 
@@ -100,7 +99,7 @@ class Settings
     // If there are validation errors, redirect back with errors
     if (!empty($validation_errors)) {
       $error_message = implode(' ', $validation_errors);
-      wp_redirect(add_query_arg(
+      wp_safe_redirect(add_query_arg(
         array(
           'page' => $this->page_slug,
           'settings-error' => urlencode($error_message)
@@ -122,7 +121,7 @@ class Settings
     $scheduler->reschedule();
 
     // Redirect back to settings page with success message
-    wp_redirect(add_query_arg(
+    wp_safe_redirect(add_query_arg(
       array('page' => $this->page_slug, 'settings-updated' => 'true'),
       admin_url('options-general.php')
     ));
@@ -135,13 +134,18 @@ class Settings
       wp_die(__('You do not have sufficient permissions to access this page.'));
     }
 
+    // Verify nonce before anything else
+    if (!isset($_POST['scholar_refresh_nonce']) || !wp_verify_nonce($_POST['scholar_refresh_nonce'], 'refresh_scholar_profile')) {
+      wp_die(__('Security check failed.'));
+    }
+
     // Rate limiting: Prevent refreshes more than once every few minutes
     $last_manual_refresh = get_option('scholar_profile_last_manual_refresh', 0);
     $time_since_last = time() - $last_manual_refresh;
 
     if ($time_since_last < self::REFRESH_COOLDOWN_SECONDS) {
       $minutes_remaining = ceil((self::REFRESH_COOLDOWN_SECONDS - $time_since_last) / 60);
-      wp_redirect(add_query_arg(
+      wp_safe_redirect(add_query_arg(
         array(
           'page' => $this->page_slug,
           'refresh' => 'failed',
@@ -156,14 +160,9 @@ class Settings
     // Update the last manual refresh timestamp
     update_option('scholar_profile_last_manual_refresh', time());
 
-    // Verify nonce
-    if (!isset($_POST['scholar_refresh_nonce']) || !wp_verify_nonce($_POST['scholar_refresh_nonce'], 'refresh_scholar_profile')) {
-      wp_die(__('Security check failed.'));
-    }
-
     $options = get_option($this->option_name);
     if (empty($options['profile_id'])) {
-      wp_redirect(add_query_arg(
+      wp_safe_redirect(add_query_arg(
         array('page' => $this->page_slug, 'refresh' => 'failed', 'message' => 'no_profile_id'),
         admin_url('options-general.php')
       ));
@@ -196,13 +195,13 @@ class Settings
       // Update status to success
       $scheduler->update_data_status('success', sprintf(
         'Manual refresh successful at %s - Found %d publications',
-        date('Y-m-d H:i:s'),
+        wp_date('Y-m-d H:i:s'),
         count($data['publications'])
       ));
 
       wp_scholar_log("Manual refresh successful for profile: " . $options['profile_id']);
 
-      wp_redirect(add_query_arg(
+      wp_safe_redirect(add_query_arg(
         array('page' => $this->page_slug, 'refresh' => 'success'),
         admin_url('options-general.php')
       ));
@@ -247,7 +246,7 @@ class Settings
         $redirect_args['error_type'] = $error_details['type'];
       }
 
-      wp_redirect(add_query_arg($redirect_args, admin_url('options-general.php')));
+      wp_safe_redirect(add_query_arg($redirect_args, admin_url('options-general.php')));
     }
     exit;
   }
@@ -269,7 +268,7 @@ class Settings
     $scheduler = new Scheduler();
     $scheduler->clear_stale_data();
 
-    wp_redirect(add_query_arg(
+    wp_safe_redirect(add_query_arg(
       array('page' => $this->page_slug, 'clear' => 'success'),
       admin_url('options-general.php')
     ));
@@ -288,16 +287,20 @@ class Settings
     $is_data_stale = $scheduler->is_data_stale();
     $messages = array();
 
-    // Debug: Log all URL parameters when DEBUG is enabled
+    // Debug: Log only known page-related parameters
     if (defined('WP_DEBUG') && WP_DEBUG) {
-      wp_scholar_log('Settings page URL parameters: ' . print_r($_GET, true));
+      $safe_params = array_intersect_key(
+        $_GET,
+        array_flip(['page', 'refresh', 'message', 'clear', 'settings-updated'])
+      );
+      wp_scholar_log('Settings page URL parameters: ' . print_r($safe_params, true));
     }
 
     // Handle settings validation errors
     if (isset($_GET['settings-error'])) {
       $messages[] = array(
         'type' => 'error',
-        'message' => '⚠ ' . urldecode($_GET['settings-error'])
+        'message' => '⚠ ' . sanitize_text_field(urldecode($_GET['settings-error']))
       );
     }
 

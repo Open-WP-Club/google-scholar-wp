@@ -169,14 +169,16 @@ class SEOTest extends TestCase
         $seo->add_profile_seo([], []);
     }
 
-    public function test_add_profile_seo_registers_wp_footer_action(): void
+    public function test_add_profile_seo_does_not_register_footer_action(): void
     {
         $seo = new SEO();
         $data = $this->getSampleData();
 
+        // Meta tags are now output via wp_head (registered in constructor),
+        // so add_profile_seo must not register any wp_footer action.
         Functions\expect('add_action')
-            ->once()
-            ->with('wp_footer', \Mockery::type('Closure'));
+            ->never()
+            ->with('wp_footer', \Mockery::any());
 
         $seo->add_profile_seo($data, []);
     }

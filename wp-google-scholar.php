@@ -8,7 +8,7 @@
  * Author: OpenWPClub.com
  * Author URI: https://openwpclub.com/
  * License: GPL v2 or later
- * Text Domain: scholar-profile
+ * Text Domain: wp-google-scholar
  * Domain Path: /languages
  * Requires at least: 5.0
  * Requires PHP: 7.0
@@ -52,7 +52,7 @@ add_action('plugins_loaded', 'wp_scholar_init');
 function wp_scholar_init()
 {
   // Load text domain
-  load_plugin_textdomain('scholar-profile', false, dirname(plugin_basename(__FILE__)) . '/languages');
+  load_plugin_textdomain('wp-google-scholar', false, dirname(plugin_basename(__FILE__)) . '/languages');
 
   // Initialize classes
   new WPScholar\Settings();
@@ -280,16 +280,6 @@ function wp_scholar_admin_notices()
         'a' => array('href' => array())
       )) . '</p></div>';
     }
-  }
-}
-
-// Add cleanup scheduled task for error details (optional housekeeping)
-add_action('init', 'wp_scholar_init_cleanup_task');
-
-function wp_scholar_init_cleanup_task()
-{
-  if (!wp_next_scheduled('scholar_profile_cleanup_errors')) {
-    wp_schedule_event(time(), 'weekly', 'scholar_profile_cleanup_errors');
   }
 }
 

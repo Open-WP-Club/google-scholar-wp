@@ -49,7 +49,7 @@ class Scraper
     wp_scholar_log("Starting avatar download for profile $profile_id from: $image_url");
 
     // Generate a consistent filename based on URL hash for better caching
-    $url_hash = md5($image_url);
+    $url_hash = hash('sha256', $image_url);
     $filename = 'scholar-' . $profile_id . '-' . $url_hash;
 
     // Determine file extension
@@ -82,8 +82,9 @@ class Scraper
         wp_scholar_log("Using cached avatar for hash: $url_hash");
         return $attachment_url;
       } else {
-        // Clean up broken attachment
+        // Clean up broken attachment and its transient so the image is re-downloaded
         wp_delete_attachment($existing_attachment[0]->ID, true);
+        delete_transient('scholar_image_download_' . $url_hash);
         wp_scholar_log("Removed broken cached avatar for hash: $url_hash");
       }
     }
@@ -655,16 +656,14 @@ class Scraper
       $current_start += $this->page_size;
       $page_number++;
 
-      // Add delay between requests to be respectful to Google Scholar
-      if ($page_number > 1) {
-        sleep($this->request_delay);
-      }
-
       // Safety check to prevent infinite loops
       if ($page_number > self::MAX_SCRAPING_PAGES) {
         wp_scholar_log(sprintf("Reached maximum page limit (%d pages)", self::MAX_SCRAPING_PAGES));
         break;
       }
+
+      // Add delay between requests to be respectful to Google Scholar
+      sleep($this->request_delay);
     }
 
     wp_scholar_log("Total publications collected: " . count($all_publications));
@@ -1008,11 +1007,18 @@ class Scraper
         $avatar_url = $img ? $img->getAttribute('src') : '';
         $local_avatar = '';
 
+        // Use the coauthor's own Scholar ID as the cache key, falling back to a
+        // hash of their name so coauthor images don't share the main profile's
+        // _scholar_profile_id and aren't incorrectly deleted during cleanup.
+        $href = $link->getAttribute('href');
+        preg_match('/user=([^&]+)/', $href, $user_matches);
+        $coauthor_cache_id = !empty($user_matches[1]) ? $user_matches[1] : 'coauthor_' . md5($name);
+
         if ($avatar_url) {
           wp_scholar_log("Processing coauthor avatar for: $name");
           $local_avatar = $this->download_to_media_library(
             $avatar_url,
-            $profile_id,
+            $coauthor_cache_id,
             sprintf('Scholar Coauthor Avatar - %s', $name)
           );
 
@@ -1100,7 +1106,7 @@ class Scraper
     // unless it's a new profile
     if (count($data['publications']) === 0) {
       $existing_data = get_option('scholar_profile_data');
-      if ($existing_data && count($existing_data['publications']) > 0) {
+      if ($existing_data && isset($existing_data['publications']) && count($existing_data['publications']) > 0) {
         wp_scholar_log("Data validation warning: new data has 0 publications but existing data has publications");
         return false;
       }

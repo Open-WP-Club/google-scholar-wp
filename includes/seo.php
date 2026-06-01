@@ -8,21 +8,40 @@ if (!defined('ABSPATH')) {
 
 class SEO
 {
-  private $has_output = false; // Prevent duplicate output
+  private $has_output = false;
+
+  public function __construct()
+  {
+    // Register early so tags land in <head>, before the shortcode runs during the_content.
+    add_action('wp_head', array($this, 'maybe_output_scholar_tags'), 5);
+  }
 
   /**
-   * Add SEO enhancements for scholar profile
+   * Output academic citation meta tags in <head> for pages that contain the shortcode.
+   */
+  public function maybe_output_scholar_tags(): void
+  {
+    global $post;
+    if (!$post || !has_shortcode($post->post_content, 'scholar_profile')) {
+      return;
+    }
+    $data = get_option('scholar_profile_data');
+    if (empty($data) || !is_array($data)) {
+      return;
+    }
+    $this->output_scholar_tags($data);
+  }
+
+  /**
+   * Add SEO enhancements for scholar profile (called from shortcode).
+   * Meta tags are already handled via wp_head; this is kept for any future
+   * per-render SEO work.
    */
   public function add_profile_seo($data, $options)
   {
     if (empty($data) || !is_array($data)) {
       return;
     }
-
-    // Output academic meta tags via wp_footer (shortcode hasn't run yet during wp_head)
-    add_action('wp_footer', function () use ($data) {
-      $this->output_scholar_tags($data);
-    });
   }
 
   /**

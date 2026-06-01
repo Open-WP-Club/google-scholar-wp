@@ -333,12 +333,21 @@ class SchedulerTest extends TestCase
     {
         $scheduler = $this->createSchedulerWithoutConstructor();
 
+        Functions\expect('get_option')
+            ->with('scholar_profile_settings')
+            ->andReturn(['update_frequency' => 'weekly']);
         Functions\expect('wp_next_scheduled')
             ->with('scholar_profile_update')
+            ->andReturn(false);
+        Functions\expect('wp_next_scheduled')
+            ->with('scholar_profile_cleanup_errors')
             ->andReturn(false);
         Functions\expect('wp_schedule_event')
             ->once()
             ->with(\Mockery::type('int'), 'weekly', 'scholar_profile_update');
+        Functions\expect('wp_schedule_event')
+            ->once()
+            ->with(\Mockery::type('int'), 'weekly', 'scholar_profile_cleanup_errors');
 
         $scheduler->activate();
     }
@@ -373,14 +382,20 @@ class SchedulerTest extends TestCase
     {
         $scheduler = $this->createSchedulerWithoutConstructor();
 
+        Functions\expect('get_option')
+            ->with('scholar_profile_settings')
+            ->andReturn(['update_frequency' => 'weekly']);
         Functions\expect('wp_clear_scheduled_hook')
             ->once()
             ->with('scholar_profile_update');
         Functions\expect('wp_next_scheduled')
             ->with('scholar_profile_update')
             ->andReturn(false);
+        Functions\expect('wp_next_scheduled')
+            ->with('scholar_profile_cleanup_errors')
+            ->andReturn(false);
         Functions\expect('wp_schedule_event')
-            ->once();
+            ->twice();
 
         $scheduler->reschedule();
     }

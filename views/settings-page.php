@@ -27,7 +27,7 @@ $scheduler = new WPScholar\Scheduler();
 $next_scheduled = $scheduler->get_next_scheduled();
 
 // Calculate refresh cooldown
-$cooldown_period = 5 * 60; // 5 minutes
+$cooldown_period = \WPScholar\Settings::REFRESH_COOLDOWN_SECONDS;
 $time_since_refresh = time() - $last_manual_refresh;
 $can_refresh = $time_since_refresh >= $cooldown_period;
 $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_refresh) / 60);
@@ -47,10 +47,10 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
               'strong' => array(),
               'em' => array(),
               'br' => array(),
-              'ul' => array('class' => array()),
+              'ul' => array(),
               'li' => array(),
-              'div' => array('class' => array()),
-              'span' => array('class' => array())
+              'div' => array(),
+              'span' => array()
             ));
           } else {
             echo esc_html($message['message']);
