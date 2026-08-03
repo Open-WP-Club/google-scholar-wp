@@ -100,6 +100,15 @@ class Scheduler
   public function update_profile()
   {
     $options = get_option('scholar_profile_settings');
+
+    // activate()/reschedule() remove the cron event in Browser mode, but an
+    // event may already be executing when the setting changes. Never let
+    // that race send a server-side request to Scholar.
+    if (($options['update_method'] ?? 'server') === 'browser') {
+      wp_scholar_log('Scheduled update skipped: Browser-assisted mode is enabled');
+      return;
+    }
+
     if (empty($options['profile_id'])) {
       wp_scholar_log('Scheduled update skipped: No profile ID configured');
       $this->update_data_status('error', 'No profile ID configured');

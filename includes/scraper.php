@@ -860,7 +860,9 @@ class Scraper
 
     // Coauthor avatars are never fetched for browser-assisted imports -
     // only the main profile avatar is ever worth the extra request(s).
-    $data = $this->parse_main_profile_html($html, $profile_id, $skip_avatar_download, true);
+    // The pasted main page contains the first publications page as well, so
+    // extract it from the same DOMDocument instead of parsing the HTML twice.
+    $data = $this->parse_main_profile_html($html, $profile_id, $skip_avatar_download, true, true);
 
     if ($data === false && $this->last_error_details === null) {
       $this->last_error_details = array(
@@ -917,6 +919,41 @@ class Scraper
       return false;
     }
 
+    if ($profile_id !== '' && (!isset($decoded['profile_id']) || $decoded['profile_id'] !== $profile_id)) {
+      $this->last_error_details = array(
+        'type' => 'wrong_import_profile',
+        'message' => 'Bookmarklet data belongs to a different Google Scholar profile. Recreate the bookmarklet from this site’s settings page and try again.'
+      );
+      return false;
+    }
+
+    foreach ($decoded['publications'] as $index => $publication) {
+      if (!is_array($publication) ||
+        empty($publication['title']) ||
+        empty($publication['google_scholar_url']) ||
+        !array_key_exists('year', $publication) ||
+        !array_key_exists('citations', $publication) ||
+        !array_key_exists('citations_url', $publication)) {
+        $this->last_error_details = array(
+          'type' => 'invalid_bookmarklet_publication',
+          'message' => sprintf('Publication %d is missing one or more required fields.', $index + 1)
+        );
+        return false;
+      }
+
+      if (!is_string($publication['title']) ||
+        !is_string($publication['google_scholar_url']) ||
+        !is_scalar($publication['year']) ||
+        !is_numeric($publication['citations']) ||
+        !is_string($publication['citations_url'])) {
+        $this->last_error_details = array(
+          'type' => 'invalid_bookmarklet_publication',
+          'message' => sprintf('Publication %d has invalid field values.', $index + 1)
+        );
+        return false;
+      }
+    }
+
     $citations = is_array($decoded['citations'] ?? null) ? $decoded['citations'] : array();
 
     // The bookmarklet only ever ships the avatar's URL (not its bytes -
@@ -949,7 +986,7 @@ class Scraper
     );
   }
 
-  private function parse_main_profile_html($html, $profile_id, $skip_avatar_download = false, $skip_coauthor_avatars = false)
+  private function parse_main_profile_html($html, $profile_id, $skip_avatar_download = false, $skip_coauthor_avatars = false, $include_publications = false)
   {
     $doc = new \DOMDocument();
     libxml_use_internal_errors(true);
@@ -977,6 +1014,9 @@ class Scraper
     $this->extract_profile_info($xpath, $data, $profile_id, $skip_avatar_download);
     $this->extract_citations($xpath, $data);
     $this->extract_coauthors($xpath, $data, $profile_id, $skip_coauthor_avatars);
+    if ($include_publications) {
+      $data['publications'] = $this->extract_publications_from_xpath($xpath);
+    }
 
     // Validate that we extracted meaningful data
     if (empty($data['name'])) {
@@ -1005,6 +1045,17 @@ class Scraper
     libxml_clear_errors();
     $xpath = new \DOMXPath($doc);
 
+    return $this->extract_publications_from_xpath($xpath);
+  }
+
+  /**
+   * Extract publication rows from an already parsed Scholar page.
+   *
+   * @param \DOMXPath $xpath Page XPath instance
+   * @return array
+   */
+  private function extract_publications_from_xpath(\DOMXPath $xpath): array
+  {
     $publications = array();
     $publication_rows = $xpath->query("//tr[@class='gsc_a_tr']");
 
@@ -1205,13 +1256,16 @@ class Scraper
       return false;
     }
 
-    // Check for required fields
-    $required_fields = ['name', 'publications'];
-    foreach ($required_fields as $field) {
-      if (!isset($data[$field]) || empty($data[$field])) {
-        wp_scholar_log("Data validation failed: missing required field '$field'");
-        return false;
-      }
+    // A name must be present, while publications must be present as an array.
+    // An empty array is legitimate for a newly created Scholar profile.
+    if (empty($data['name'])) {
+      wp_scholar_log("Data validation failed: missing required field 'name'");
+      return false;
+    }
+
+    if (!array_key_exists('publications', $data)) {
+      wp_scholar_log("Data validation failed: missing required field 'publications'");
+      return false;
     }
 
     // Check if publications array is reasonable

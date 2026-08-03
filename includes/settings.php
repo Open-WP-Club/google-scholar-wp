@@ -13,7 +13,8 @@ class Settings
 
   // Constants for validation and rate limiting
   public const REFRESH_COOLDOWN_SECONDS = 300; // 5 minutes
-private const MIN_PROFILE_ID_LENGTH = 8;
+  private const IMPORT_REPLACE_COOLDOWN_SECONDS = 15;
+  private const MIN_PROFILE_ID_LENGTH = 8;
   private const MAX_PROFILE_ID_LENGTH = 20;
   public const DATA_STALE_AGE_DAYS = 90; // Public so Scheduler can access it
 
@@ -140,6 +141,17 @@ private const MIN_PROFILE_ID_LENGTH = 8;
       wp_die(__('Security check failed.'));
     }
 
+    // A stale tab can still submit a valid nonce after Browser mode is saved,
+    // so enforce the mode here as well as in the settings-page UI.
+    $options = get_option($this->option_name, array());
+    if (($options['update_method'] ?? 'server') === 'browser') {
+      wp_safe_redirect(add_query_arg(
+        array('page' => $this->page_slug, 'refresh' => 'failed', 'message' => 'browser_mode'),
+        admin_url('options-general.php')
+      ));
+      exit;
+    }
+
     // Rate limiting: Prevent refreshes more than once every few minutes
     $last_manual_refresh = get_option('scholar_profile_last_manual_refresh', 0);
     $time_since_last = time() - $last_manual_refresh;
@@ -161,7 +173,6 @@ private const MIN_PROFILE_ID_LENGTH = 8;
     // Update the last manual refresh timestamp
     update_option('scholar_profile_last_manual_refresh', time());
 
-    $options = get_option($this->option_name);
     if (empty($options['profile_id'])) {
       wp_safe_redirect(add_query_arg(
         array('page' => $this->page_slug, 'refresh' => 'failed', 'message' => 'no_profile_id'),
@@ -291,19 +302,49 @@ private const MIN_PROFILE_ID_LENGTH = 8;
       wp_die(__('Security check failed.'));
     }
 
-    $options = get_option($this->option_name);
+    $options = get_option($this->option_name, array());
+    if (($options['update_method'] ?? 'server') !== 'browser') {
+      wp_safe_redirect(add_query_arg(
+        array('page' => $this->page_slug, 'import' => 'failed', 'error_type' => 'browser_mode_required'),
+        admin_url('options-general.php')
+      ));
+      exit;
+    }
+
     $existing_data = get_option('scholar_profile_data', array());
     $content = isset($_POST['scholar_import_content']) ? wp_unslash($_POST['scholar_import_content']) : '';
+    $import_mode = isset($_POST['scholar_import_mode']) && $_POST['scholar_import_mode'] === 'append'
+      ? 'append'
+      : 'replace';
+
+    // A full replacement may download the profile avatar. Briefly lock that
+    // action against double-clicks/back-button resubmits, while deliberately
+    // leaving append imports unrestricted for the expected cstart=N flow.
+    if ($import_mode === 'replace') {
+      $lock_name = 'scholar_profile_import_replace_lock';
+      if (get_transient($lock_name)) {
+        wp_safe_redirect(add_query_arg(
+          array('page' => $this->page_slug, 'import' => 'failed', 'error_type' => 'import_rate_limited'),
+          admin_url('options-general.php')
+        ));
+        exit;
+      }
+      set_transient($lock_name, 1, self::IMPORT_REPLACE_COOLDOWN_SECONDS);
+    }
 
     $result = $this->build_import_data(
       $content,
       is_array($existing_data) ? $existing_data : array(),
-      $options['profile_id'] ?? ''
+      $options['profile_id'] ?? '',
+      $import_mode,
+      intval($options['max_publications'] ?? 200)
     );
 
     if (isset($result['error'])) {
       wp_scholar_log('Browser import failed: ' . ($result['error']['message'] ?? 'Unknown error'), 'error');
       update_option('scholar_profile_last_error_details', $result['error']);
+      $scheduler = new Scheduler();
+      $scheduler->update_data_status('error', $result['error']['message'] ?? 'Browser import failed.');
 
       wp_safe_redirect(add_query_arg(
         array(
@@ -319,6 +360,14 @@ private const MIN_PROFILE_ID_LENGTH = 8;
     $data = $result['data'];
 
     if (!Scraper::validate_scraped_data($data)) {
+      $error = array(
+        'type' => 'validation_failed',
+        'message' => 'The imported data did not look complete enough to save. Please make sure you copied the full profile page.'
+      );
+      update_option('scholar_profile_last_error_details', $error);
+      $scheduler = new Scheduler();
+      $scheduler->update_data_status('error', $error['message']);
+
       wp_safe_redirect(add_query_arg(
         array('page' => $this->page_slug, 'import' => 'failed', 'error_type' => 'validation_failed'),
         admin_url('options-general.php')
@@ -355,9 +404,11 @@ private const MIN_PROFILE_ID_LENGTH = 8;
    * @param string $content Raw pasted content (JSON from the bookmarklet, or HTML)
    * @param array $existing_data Currently stored scholar_profile_data (for appending extra pages)
    * @param string $profile_id The configured Google Scholar profile ID
+   * @param string $import_mode Whether this replaces profile data or appends a later page
+   * @param int $max_publications Maximum number of publications to retain
    * @return array Either ['data' => array] on success or ['error' => array] on failure
    */
-  public function build_import_data(string $content, array $existing_data, string $profile_id): array
+  public function build_import_data(string $content, array $existing_data, string $profile_id, string $import_mode = 'replace', int $max_publications = 200): array
   {
     $content = trim($content);
 
@@ -368,58 +419,129 @@ private const MIN_PROFILE_ID_LENGTH = 8;
       ));
     }
 
+    if (!in_array($import_mode, array('replace', 'append'), true)) {
+      return array('error' => array(
+        'type' => 'invalid_import_mode',
+        'message' => 'Choose whether to replace the profile data or add a later publications page.'
+      ));
+    }
+
+    $max_publications = max(1, $max_publications);
+
     $scraper = new Scraper();
 
     // Bookmarklet output is a JSON object.
     if ($content[0] === '{') {
+      if ($import_mode === 'append') {
+        return array('error' => array(
+          'type' => 'bookmarklet_cannot_append',
+          'message' => 'Bookmarklet data already contains the full profile. Use “Replace profile data” to import it.'
+        ));
+      }
       $data = $scraper->import_from_bookmarklet_json($content, $profile_id);
       if ($data === false) {
         return array('error' => $scraper->get_last_error_details());
       }
+      $data['publications'] = array_slice($data['publications'], 0, $max_publications);
       return array('data' => $data);
     }
 
-    // A full profile page (contains the profile container) replaces
-    // profile info and its first page of publications. The main avatar is
-    // downloaded (a single request); coauthor avatars are always skipped.
-    if (strpos($content, 'gsc_prf') !== false) {
+    // Subsequent Scholar pages also contain gsc_prf. The explicit append
+    // action prevents a cstart=N page from replacing stored publications.
+    if ($import_mode === 'append' && strpos($content, 'gsc_a_tr') !== false) {
+      return $this->append_imported_publications($scraper, $content, $existing_data, $profile_id, $max_publications);
+    }
+
+    // A full profile page replaces profile information and publications.
+    // The main avatar is downloaded (a single request); coauthor avatars
+    // are always skipped.
+    if ($import_mode === 'replace' && strpos($content, 'gsc_prf') !== false) {
       $data = $scraper->import_main_profile_html($content, $profile_id, false);
       if ($data === false) {
         return array('error' => $scraper->get_last_error_details());
       }
-      // The main profile page also embeds its first page of publications.
-      $data['publications'] = $scraper->import_publications_fragment_html($content);
+      $data['publications'] = array_slice($data['publications'], 0, $max_publications);
       return array('data' => $data);
     }
 
-    // A pagination-only page (no profile container) is appended to
-    // whatever profile data is already stored.
-    if (strpos($content, 'gsc_a_tr') !== false) {
-      $new_publications = $scraper->import_publications_fragment_html($content);
-
-      if (empty($new_publications)) {
-        return array('error' => array(
-          'type' => 'no_publications_found',
-          'message' => 'No publications were found in the pasted content.'
-        ));
-      }
-
-      if (empty($existing_data) || empty($existing_data['name'])) {
-        return array('error' => array(
-          'type' => 'no_base_profile',
-          'message' => 'Please import the main profile page first before adding extra pages.'
-        ));
-      }
-
-      $data = $existing_data;
-      $data['publications'] = $this->merge_publications($existing_data['publications'] ?? array(), $new_publications);
-      return array('data' => $data);
+    if ($import_mode === 'replace' && strpos($content, 'gsc_a_tr') !== false) {
+      return array('error' => array(
+        'type' => 'profile_page_required',
+        'message' => 'Use “Add publications from another page” for a later Scholar page, or paste the main profile page to replace profile data.'
+      ));
     }
 
     return array('error' => array(
       'type' => 'unrecognized_content',
       'message' => "This doesn't look like a Google Scholar profile page."
     ));
+  }
+
+  /**
+   * Add publications from a later Scholar page without changing stored
+   * profile details. Complete pages and table-only fragments are both valid.
+   */
+  private function append_imported_publications(Scraper $scraper, string $content, array $existing_data, string $profile_id, int $max_publications): array
+  {
+    $new_publications = $scraper->import_publications_fragment_html($content);
+
+    if (empty($new_publications)) {
+      return array('error' => array(
+        'type' => 'no_publications_found',
+        'message' => 'No publications were found in the pasted content.'
+      ));
+    }
+
+    if (empty($existing_data) || empty($existing_data['name'])) {
+      return array('error' => array(
+        'type' => 'no_base_profile',
+        'message' => 'Please import the main profile page first before adding extra pages.'
+      ));
+    }
+
+    $imported_profile_id = $this->extract_profile_id_from_html($content);
+    if ($imported_profile_id === null) {
+      return array('error' => array(
+        'type' => 'missing_import_profile_id',
+        'message' => 'Could not verify which Scholar profile this publications page belongs to.'
+      ));
+    }
+
+    if ($profile_id !== '' && $imported_profile_id !== $profile_id) {
+      return array('error' => array(
+        'type' => 'wrong_import_profile',
+        'message' => 'The pasted publications page belongs to a different Google Scholar profile.'
+      ));
+    }
+
+    $data = $existing_data;
+    $data['publications'] = array_slice(
+      $this->merge_publications($existing_data['publications'] ?? array(), $new_publications),
+      0,
+      $max_publications
+    );
+    return array('data' => $data);
+  }
+
+  /**
+   * Extract the Scholar user ID embedded in either a full later page or its
+   * publication links. cstart=N pages do not reliably expose a canonical URL.
+   */
+  private function extract_profile_id_from_html(string $html): ?string
+  {
+    $html = html_entity_decode($html, ENT_QUOTES, 'UTF-8');
+
+    // Publication links identify the profile directly. Prefer them over a
+    // generic user= URL, which can point to a coauthor in the sidebar.
+    if (preg_match('/citation_for_view=([A-Za-z0-9_-]+)(?::|%3A)/i', $html, $matches)) {
+      return $matches[1];
+    }
+
+    if (preg_match('/[?&]user=([A-Za-z0-9_-]+)/', $html, $matches)) {
+      return $matches[1];
+    }
+
+    return null;
   }
 
   /**
@@ -533,7 +655,10 @@ private const MIN_PROFILE_ID_LENGTH = 8;
       );
     }
 
-    $bookmarklet_href = $this->build_bookmarklet_href($options['max_publications'] ?? 200);
+    $update_method = $options['update_method'] ?? 'server';
+    $bookmarklet_href = $update_method === 'browser'
+      ? $this->build_bookmarklet_href($options['max_publications'] ?? 200)
+      : '';
 
     include WP_SCHOLAR_PLUGIN_DIR . 'views/settings-page.php';
   }
@@ -543,6 +668,20 @@ private const MIN_PROFILE_ID_LENGTH = 8;
    */
   private function get_import_error_message($get_params)
   {
+    // This failure is local to the current request. Prefer it to an old
+    // server-side error retained for troubleshooting.
+    if (isset($get_params['error_type']) && $get_params['error_type'] === 'validation_failed') {
+      return __('The imported data did not look complete enough to save. Please make sure you copied the full profile page.', 'wp-google-scholar');
+    }
+
+    if (isset($get_params['error_type']) && $get_params['error_type'] === 'import_rate_limited') {
+      return __('Please wait a few seconds before replacing profile data again.', 'wp-google-scholar');
+    }
+
+    if (isset($get_params['error_type']) && $get_params['error_type'] === 'browser_mode_required') {
+      return __('Select Browser mode before importing profile data.', 'wp-google-scholar');
+    }
+
     $error_details = get_option('scholar_profile_last_error_details');
 
     if ($error_details) {
@@ -553,10 +692,6 @@ private const MIN_PROFILE_ID_LENGTH = 8;
       if (isset($error_details['message'])) {
         return esc_html($error_details['message']);
       }
-    }
-
-    if (isset($get_params['error_type']) && $get_params['error_type'] === 'validation_failed') {
-      return __('The imported data did not look complete enough to save. Please make sure you copied the full profile page.', 'wp-google-scholar');
     }
 
     return __('Could not import the pasted content. Please check it and try again.', 'wp-google-scholar');
@@ -604,6 +739,9 @@ private const MIN_PROFILE_ID_LENGTH = 8;
             __('Please wait %d more minute(s) before refreshing again. This prevents rate limiting from Google Scholar.', 'wp-google-scholar'),
             $minutes
           );
+
+        case 'browser_mode':
+          return __('Server-side refresh is disabled while Browser mode is selected. Use the Browser-Assisted Import panel instead.', 'wp-google-scholar');
       }
     }
 

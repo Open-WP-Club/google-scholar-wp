@@ -163,9 +163,11 @@ class ScraperTest extends TestCase
 
     public function test_validate_zero_pubs_without_existing_data(): void
     {
-        // Empty array is considered "empty" by PHP's empty() so validation
-        // fails at the required fields check before reaching the zero-pubs logic.
-        $this->assertFalse(Scraper::validate_scraped_data([
+        Functions\expect('get_option')
+            ->with('scholar_profile_data')
+            ->andReturn(false);
+
+        $this->assertTrue(Scraper::validate_scraped_data([
             'name' => 'John',
             'publications' => [],
         ]));
@@ -686,7 +688,13 @@ class ScraperTest extends TestCase
             ],
             'coauthors' => [['name' => 'Bob', 'profile_url' => 'https://scholar.google.com/y', 'title' => 'MIT', 'avatar' => '']],
             'publications' => [
-                ['title' => 'Paper One', 'year' => '2021', 'citations' => 12],
+                [
+                    'title' => 'Paper One',
+                    'google_scholar_url' => 'https://scholar.google.com/citations?view_op=view_citation&citation_for_view=test:one',
+                    'year' => '2021',
+                    'citations' => 12,
+                    'citations_url' => 'https://scholar.google.com/scholar?cites=one',
+                ],
             ],
         ]);
 
@@ -734,10 +742,39 @@ class ScraperTest extends TestCase
         $this->assertSame('invalid_bookmarklet_data', $scraper->get_last_error_details()['type']);
     }
 
+    public function test_import_from_bookmarklet_json_rejects_incomplete_publication(): void
+    {
+        $scraper = new Scraper();
+        $json = json_encode([
+            'name' => 'Jane',
+            'publications' => [['title' => 'Paper without a Scholar URL']],
+        ]);
+
+        $result = $scraper->import_from_bookmarklet_json($json);
+
+        $this->assertFalse($result);
+        $this->assertSame('invalid_bookmarklet_publication', $scraper->get_last_error_details()['type']);
+    }
+
+    public function test_import_from_bookmarklet_json_rejects_a_different_profile(): void
+    {
+        $scraper = new Scraper();
+        $json = json_encode([
+            'profile_id' => 'other-profile',
+            'name' => 'Jane',
+            'publications' => [],
+        ]);
+
+        $result = $scraper->import_from_bookmarklet_json($json, 'expected-profile');
+
+        $this->assertFalse($result);
+        $this->assertSame('wrong_import_profile', $scraper->get_last_error_details()['type']);
+    }
+
     public function test_import_from_bookmarklet_json_defaults_missing_optional_fields(): void
     {
         $scraper = new Scraper();
-        $json = json_encode(['name' => 'Jane', 'publications' => []]);
+        $json = json_encode(['profile_id' => 'test123ABC', 'name' => 'Jane', 'publications' => []]);
 
         $result = $scraper->import_from_bookmarklet_json($json);
 
@@ -751,7 +788,7 @@ class ScraperTest extends TestCase
     public function test_import_from_bookmarklet_json_skips_avatar_when_url_absent(): void
     {
         $scraper = new Scraper();
-        $json = json_encode(['name' => 'Jane', 'publications' => []]);
+        $json = json_encode(['profile_id' => 'test123ABC', 'name' => 'Jane', 'publications' => []]);
 
         Functions\expect('get_posts')->never();
 
@@ -764,6 +801,7 @@ class ScraperTest extends TestCase
     {
         $scraper = new Scraper();
         $json = json_encode([
+            'profile_id' => 'test123ABC',
             'name' => 'Jane Bookmarklet',
             'avatar_url' => 'https://scholar.googleusercontent.com/citations?view_op=medium_photo&user=test123ABC',
             'publications' => [],

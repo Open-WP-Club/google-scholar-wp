@@ -16,6 +16,8 @@ if (!isset($options)) {
   ));
 }
 
+$update_method = $options['update_method'] ?? 'server';
+
 // Get profile data and last update info
 $profile_data = get_option('scholar_profile_data');
 $last_update = get_option('scholar_profile_last_update');
@@ -139,13 +141,13 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
                     <label class="scholar-checkbox-label">
                       <input type="radio"
                         name="scholar_profile_settings[update_method]"
-                        value="server" <?php checked('server', $options['update_method'] ?? 'server'); ?>>
+                        value="server" <?php checked('server', $update_method); ?>>
                       <span class="scholar-checkbox-text"><?php _e('Server (automatic)', 'wp-google-scholar'); ?></span>
                     </label>
                     <label class="scholar-checkbox-label">
                       <input type="radio"
                         name="scholar_profile_settings[update_method]"
-                        value="browser" <?php checked('browser', $options['update_method'] ?? 'server'); ?>>
+                        value="browser" <?php checked('browser', $update_method); ?>>
                       <span class="scholar-checkbox-text"><?php _e('Browser (manual, for hosts that block scraping)', 'wp-google-scholar'); ?></span>
                     </label>
                   </fieldset>
@@ -217,7 +219,7 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
             </div>
           </form>
 
-          <?php if (($options['update_method'] ?? 'server') === 'browser'): ?>
+          <?php if ($update_method === 'browser'): ?>
             <!-- Browser-Assisted Import Panel -->
             <div class="scholar-refresh-section">
               <h3><?php _e('Browser-Assisted Import', 'wp-google-scholar'); ?></h3>
@@ -242,7 +244,7 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
                 </p>
 
                 <p class="description">
-                  <?php _e("No bookmarklet? Open your profile page above, select all (Ctrl/Cmd+A), copy (Ctrl/Cmd+C), and paste the page's HTML below instead. For profiles with more publications than fit on one page, repeat with each additional page (add &cstart=20, &cstart=40, ... to the profile URL) - each paste after the first is added to what you already have.", 'wp-google-scholar'); ?>
+                  <?php _e("No bookmarklet? Open your profile page above, select all (Ctrl/Cmd+A), copy (Ctrl/Cmd+C), and paste below. The Import box keeps the copied HTML when your browser provides it; if it cannot, open View Source and copy that page instead. First use ‘Replace profile data’. For later pages (&cstart=20, &cstart=40, ...), use ‘Add publications from another page’ so the existing list is kept.", 'wp-google-scholar'); ?>
                 </p>
 
                 <form method="post" action="<?php echo admin_url('admin-post.php'); ?>" id="scholar-import-form">
@@ -252,9 +254,15 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
                   <textarea name="scholar_import_content" id="scholar_import_content" rows="8"
                     class="large-text code"
                     placeholder="<?php esc_attr_e('Paste bookmarklet JSON or Scholar page HTML here...', 'wp-google-scholar'); ?>"></textarea>
+                  <p id="scholar-import-paste-status" class="description" aria-live="polite"></p>
 
                   <div class="scholar-form-actions">
-                    <?php submit_button(__('Import', 'wp-google-scholar'), 'primary', 'import_profile', false); ?>
+                    <button type="submit" name="scholar_import_mode" value="replace" class="button button-primary">
+                      <?php _e('Replace profile data', 'wp-google-scholar'); ?>
+                    </button>
+                    <button type="submit" name="scholar_import_mode" value="append" class="button button-secondary">
+                      <?php _e('Add publications from another page', 'wp-google-scholar'); ?>
+                    </button>
                   </div>
                 </form>
               <?php endif; ?>
@@ -523,6 +531,28 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
         setTimeout(function() {
           clearInterval(progressInterval);
         }, 120000); // 2 minutes max
+      });
+    }
+
+    const importTextarea = document.getElementById('scholar_import_content');
+    const importPasteStatus = document.getElementById('scholar-import-paste-status');
+
+    if (importTextarea) {
+      importTextarea.addEventListener('paste', function(event) {
+        const html = event.clipboardData && event.clipboardData.getData('text/html');
+
+        // A textarea normally receives text/plain, even when the clipboard
+        // also contains the selected page's HTML. Preserve the latter so the
+        // server can parse Scholar's gsc_* elements reliably.
+        if (html && html.indexOf('gsc_') !== -1) {
+          event.preventDefault();
+          importTextarea.value = html;
+          if (importPasteStatus) {
+            importPasteStatus.textContent = '<?php echo esc_js(__('Copied page HTML detected and ready to import.', 'wp-google-scholar')); ?>';
+          }
+        } else if (importPasteStatus) {
+          importPasteStatus.textContent = '<?php echo esc_js(__('Pasted text did not contain page HTML. Use the bookmarklet or copy from View Source.', 'wp-google-scholar')); ?>';
+        }
       });
     }
   });

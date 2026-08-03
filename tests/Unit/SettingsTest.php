@@ -240,8 +240,15 @@ class SettingsTest extends TestCase
     {
         $settings = $this->createSettingsWithoutConstructor();
         $json = json_encode([
+            'profile_id' => 'test123ABC',
             'name' => 'Jane Bookmarklet',
-            'publications' => [['title' => 'Paper One', 'google_scholar_url' => 'https://scholar.google.com/x']],
+            'publications' => [[
+                'title' => 'Paper One',
+                'google_scholar_url' => 'https://scholar.google.com/x',
+                'year' => '2021',
+                'citations' => 0,
+                'citations_url' => '',
+            ]],
         ]);
 
         $result = $settings->build_import_data($json, [], 'test123ABC');
@@ -294,7 +301,7 @@ class SettingsTest extends TestCase
         $settings = $this->createSettingsWithoutConstructor();
         $html = file_get_contents($this->fixturesDir . 'scholar-profile-publications.html');
 
-        $result = $settings->build_import_data($html, [], 'test123ABC');
+        $result = $settings->build_import_data($html, [], 'test', 'append');
 
         $this->assertArrayHasKey('error', $result);
         $this->assertSame('no_base_profile', $result['error']['type']);
@@ -311,7 +318,7 @@ class SettingsTest extends TestCase
             ],
         ];
 
-        $result = $settings->build_import_data($html, $existing, 'test123ABC');
+        $result = $settings->build_import_data($html, $existing, 'test', 'append');
 
         $this->assertArrayHasKey('data', $result);
         $this->assertSame('Jane Existing', $result['data']['name']);
@@ -355,9 +362,70 @@ HTML;
             ],
         ];
 
-        $result = $settings->build_import_data($html, $existing, 'test123ABC');
+        $result = $settings->build_import_data($html, $existing, 'test123', 'append');
 
         $this->assertArrayHasKey('data', $result);
         $this->assertCount(2, $result['data']['publications']); // duplicate skipped, new one added
+    }
+
+    public function test_build_import_data_appends_complete_later_page_without_replacing_profile(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $html = file_get_contents($this->fixturesDir . 'scholar-profile-publications.html');
+        // Real cstart=N pages include this sidebar too; append mode, not an
+        // unreliable gsc_prf heuristic, decides the operation.
+        $html = str_replace('<body>', '<body><div id="gsc_prf">Profile sidebar</div>', $html);
+        $existing = [
+            'name' => 'Jane Existing',
+            'affiliation' => 'Existing University',
+            'publications' => [
+                ['title' => 'Old Paper', 'google_scholar_url' => 'https://scholar.google.com/old'],
+            ],
+        ];
+
+        $result = $settings->build_import_data($html, $existing, 'test', 'append');
+
+        $this->assertArrayHasKey('data', $result);
+        $this->assertSame('Jane Existing', $result['data']['name']);
+        $this->assertSame('Existing University', $result['data']['affiliation']);
+        $this->assertCount(5, $result['data']['publications']);
+    }
+
+    public function test_build_import_data_requires_append_action_for_publications_only_page(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $html = file_get_contents($this->fixturesDir . 'scholar-profile-publications.html');
+
+        $result = $settings->build_import_data($html, [], 'test123ABC');
+
+        $this->assertArrayHasKey('error', $result);
+        $this->assertSame('profile_page_required', $result['error']['type']);
+    }
+
+    public function test_build_import_data_rejects_append_for_a_different_profile(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $html = file_get_contents($this->fixturesDir . 'scholar-profile-publications.html');
+        $existing = ['name' => 'Jane Existing', 'publications' => []];
+
+        $result = $settings->build_import_data($html, $existing, 'other-profile', 'append');
+
+        $this->assertArrayHasKey('error', $result);
+        $this->assertSame('wrong_import_profile', $result['error']['type']);
+    }
+
+    public function test_build_import_data_limits_appended_publications_to_configured_maximum(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $html = file_get_contents($this->fixturesDir . 'scholar-profile-publications.html');
+        $existing = [
+            'name' => 'Jane Existing',
+            'publications' => [['title' => 'Old Paper', 'google_scholar_url' => 'https://scholar.google.com/old']],
+        ];
+
+        $result = $settings->build_import_data($html, $existing, 'test', 'append', 3);
+
+        $this->assertArrayHasKey('data', $result);
+        $this->assertCount(3, $result['data']['publications']);
     }
 }

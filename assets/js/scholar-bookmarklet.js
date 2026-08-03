@@ -39,6 +39,11 @@
     return;
   }
 
+  if (!document.getElementById('gsc_prf_in')) {
+    notify('This page does not contain a public Google Scholar profile. Open the profile page and try again.', true);
+    return;
+  }
+
   function text(el) {
     return el ? el.textContent.trim() : '';
   }
@@ -85,6 +90,7 @@
     var avatarImg = document.getElementById('gsc_prf_pup-img');
 
     return {
+      profile_id: profileId,
       name: text(document.getElementById('gsc_prf_in')),
       affiliation: text(document.querySelector('.gsc_prf_il')),
       avatar_url: avatarImg ? avatarImg.src : '',
@@ -129,7 +135,12 @@
     // Same origin as the page this bookmarklet runs on - no CORS involved.
     // credentials 'omit' keeps this to the plain public profile view.
     return fetch(url, { credentials: 'omit' })
-      .then(function (res) { return res.text(); })
+      .then(function (res) {
+        if (!res.ok) {
+          throw new Error('Google Scholar returned HTTP ' + res.status + ' while loading more publications.');
+        }
+        return res.text();
+      })
       .then(function (html) {
         var doc = new DOMParser().parseFromString(html, 'text/html');
         return extractPublications(doc);

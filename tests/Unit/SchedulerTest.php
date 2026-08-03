@@ -402,6 +402,20 @@ class SchedulerTest extends TestCase
         $scheduler->activate();
     }
 
+    public function test_update_profile_skips_server_scrape_in_browser_mode(): void
+    {
+        $scheduler = $this->createSchedulerWithoutConstructor();
+
+        Functions\expect('get_option')
+            ->once()
+            ->with('scholar_profile_settings')
+            ->andReturn(['update_method' => 'browser', 'profile_id' => 'test123ABC']);
+        Functions\expect('wp_remote_get')->never();
+
+        $scheduler->update_profile();
+        $this->assertTrue(true); // The early return is the behavior under test.
+    }
+
     public function test_deactivate_clears_hook(): void
     {
         $scheduler = $this->createSchedulerWithoutConstructor();
