@@ -703,7 +703,13 @@ class Settings
    */
   private function build_bookmarklet_href($max_publications): string
   {
-    $js_path = WP_SCHOLAR_PLUGIN_DIR . 'assets/js/scholar-bookmarklet.js';
+    // Bookmark managers may truncate long javascript: URLs. Use the bundled
+    // minified asset so the encoded bookmarklet remains safely below that
+    // limit, while retaining the readable source as the canonical file.
+    $js_path = WP_SCHOLAR_PLUGIN_DIR . 'assets/js/scholar-bookmarklet.min.js';
+    if (!file_exists($js_path)) {
+      $js_path = WP_SCHOLAR_PLUGIN_DIR . 'assets/js/scholar-bookmarklet.js';
+    }
     $js = file_exists($js_path) ? file_get_contents($js_path) : false;
 
     if ($js === false) {

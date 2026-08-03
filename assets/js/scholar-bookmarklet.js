@@ -132,9 +132,9 @@
     var url = 'https://scholar.google.com/citations?user=' + encodeURIComponent(profileId) +
       '&hl=en&cstart=' + start + '&pagesize=' + PAGE_SIZE;
 
-    // Same origin as the page this bookmarklet runs on - no CORS involved.
-    // credentials 'omit' keeps this to the plain public profile view.
-    return fetch(url, { credentials: 'omit' })
+    // Same origin as the page this bookmarklet runs on, so preserving the
+    // current session avoids Scholar returning a different, limited page.
+    return fetch(url, { credentials: 'same-origin' })
       .then(function (res) {
         if (!res.ok) {
           throw new Error('Google Scholar returned HTTP ' + res.status + ' while loading more publications.');
@@ -148,7 +148,10 @@
   }
 
   function collectAllPublications() {
-    var all = extractPublications(document);
+    // Always fetch from the first page with this bookmarklet's PAGE_SIZE.
+    // The profile page may be configured to show a different number of rows,
+    // which otherwise causes duplicates and gaps in the copied list.
+    var all = [];
 
     function next(start) {
       if (all.length >= MAX_PUBLICATIONS) {
@@ -166,13 +169,97 @@
       });
     }
 
-    if (all.length < PAGE_SIZE) {
-      return Promise.resolve(all.slice(0, MAX_PUBLICATIONS));
-    }
-
-    return next(PAGE_SIZE).then(function () {
+    return next(0).then(function () {
       return all.slice(0, MAX_PUBLICATIONS);
     });
+  }
+
+  function copyWithExecCommand(value) {
+    var textarea = document.createElement('textarea');
+    textarea.value = value;
+    textarea.setAttribute('readonly', '');
+    textarea.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+
+    var copied = false;
+    try {
+      copied = document.execCommand('copy');
+    } catch (err) {
+      copied = false;
+    }
+
+    document.body.removeChild(textarea);
+    return copied;
+  }
+
+  function copyToClipboard(value) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        return navigator.clipboard.writeText(value).then(function () {
+          return true;
+        }, function () {
+          return copyWithExecCommand(value);
+        });
+      } catch (err) {
+        return copyWithExecCommand(value);
+      }
+    }
+
+    return Promise.resolve(copyWithExecCommand(value));
+  }
+
+  function showCopyPanel(json, publicationCount) {
+    var panel = document.getElementById('wp-scholar-bookmarklet-copy-panel');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'wp-scholar-bookmarklet-copy-panel';
+      panel.style.cssText = 'position:fixed;top:16px;right:16px;z-index:2147483647;width:min(480px,calc(100vw - 32px));' +
+        'padding:16px;border-radius:6px;background:#fff;color:#1d2327;font:14px/1.4 -apple-system,Segoe UI,sans-serif;' +
+        'box-shadow:0 2px 14px rgba(0,0,0,.35);';
+
+      var message = document.createElement('p');
+      message.id = 'wp-scholar-bookmarklet-copy-message';
+      message.style.margin = '0 0 10px';
+      panel.appendChild(message);
+
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = 'Copy data';
+      button.style.cssText = 'margin:0 8px 10px 0;padding:7px 12px;border:0;border-radius:4px;background:#2271b1;color:#fff;cursor:pointer;';
+      panel.appendChild(button);
+
+      var textarea = document.createElement('textarea');
+      textarea.id = 'wp-scholar-bookmarklet-copy-data';
+      textarea.readOnly = true;
+      textarea.rows = 7;
+      textarea.style.cssText = 'display:block;width:100%;box-sizing:border-box;font:12px/1.4 monospace;';
+      panel.appendChild(textarea);
+
+      button.addEventListener('click', function () {
+        copyToClipboard(textarea.value).then(function (copied) {
+          if (copied) {
+            panel.parentNode.removeChild(panel);
+            notify('Copied ' + publicationCount + ' publications to your clipboard. Switch to your wp-admin tab and paste into the Import box.');
+            return;
+          }
+
+          textarea.focus();
+          textarea.select();
+          message.textContent = 'Automatic copying is blocked. Press Ctrl/Cmd+C to copy the selected data.';
+        });
+      });
+
+      document.body.appendChild(panel);
+    }
+
+    panel.querySelector('#wp-scholar-bookmarklet-copy-message').textContent =
+      'Your browser needs one final confirmation before copying ' + publicationCount + ' publications.';
+    var textarea = panel.querySelector('#wp-scholar-bookmarklet-copy-data');
+    textarea.value = json;
+    textarea.focus();
+    textarea.select();
   }
 
   notify('Collecting your Scholar profile data...');
@@ -183,17 +270,15 @@
 
     var json = JSON.stringify(data);
 
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(json).then(function () {
+    copyToClipboard(json).then(function (copied) {
+      if (copied) {
         notify('Copied ' + publications.length + ' publications to your clipboard. Switch to your wp-admin tab and paste into the Import box.');
-      }, function () {
-        window.__scholarImportData = json;
-        notify('Could not copy automatically - open the browser console and copy window.__scholarImportData manually.', true);
-      });
-    } else {
-      window.__scholarImportData = json;
-      notify('Clipboard access is unavailable - copy window.__scholarImportData from the console.', true);
-    }
+        return;
+      }
+
+      showCopyPanel(json, publications.length);
+      notify('Click “Copy data” in the panel to finish copying.', true);
+    });
   }).catch(function (err) {
     notify('Something went wrong collecting your profile data: ' + err.message, true);
   });

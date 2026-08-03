@@ -46,6 +46,10 @@ class Scraper
       return '';
     }
 
+    // These helpers are not loaded on front-end or WP-Cron requests by
+    // default. Avatar downloads may be initiated from either context.
+    $this->load_media_library_helpers();
+
     wp_scholar_log("Starting avatar download for profile $profile_id from: $image_url");
 
     // Generate a consistent filename based on URL hash for better caching
@@ -198,7 +202,6 @@ class Scraper
       // Generate optimized image sizes (WordPress will create thumbnails automatically)
       $file_path = get_attached_file($attach_id);
       if ($file_path) {
-        require_once(ABSPATH . 'wp-admin/includes/image.php');
         $attachment_metadata = wp_generate_attachment_metadata($attach_id, $file_path);
         if (false === $attachment_metadata) {
           wp_scholar_log("Failed to generate attachment metadata for attachment ID: $attach_id", 'warning');
@@ -233,6 +236,33 @@ class Scraper
         unlink($file_array['tmp_name']);
       }
       return '';
+    }
+  }
+
+  /**
+   * Load the WordPress admin helpers needed to download and sideload media.
+   *
+   * The files are already present in admin requests, but WP-Cron does not load
+   * them automatically. Guarding the includes also keeps non-WordPress test
+   * environments from attempting to load an unavailable WordPress install.
+   */
+  private function load_media_library_helpers(): void
+  {
+    $helpers = array(
+      'download_url' => 'file.php',
+      'media_handle_sideload' => 'media.php',
+      'wp_generate_attachment_metadata' => 'image.php',
+    );
+
+    foreach ($helpers as $function => $file) {
+      if (function_exists($function) || !defined('ABSPATH')) {
+        continue;
+      }
+
+      $path = ABSPATH . 'wp-admin/includes/' . $file;
+      if (file_exists($path)) {
+        require_once $path;
+      }
     }
   }
 
