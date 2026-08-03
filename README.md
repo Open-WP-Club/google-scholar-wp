@@ -12,12 +12,13 @@ This plugin fetches and displays information from Google Scholar profiles, inclu
 - Citation metrics
 - Interactive sorting and filtering
 
-The data can be automatically updated on a schedule or manually refreshed as needed.
+The data can be automatically updated on a schedule, or imported manually from
+your browser when Google Scholar blocks server-side requests.
 
 ## Installation
 
-1. Download the plugin files and upload them to your `/wp-content/plugins/google-scholar-profile` directory
-2. Activate the plugin through the 'Plugins' menu in WordPress
+1. Upload the plugin ZIP through **Plugins → Add New → Upload Plugin**, or place it in `/wp-content/plugins/google-scholar-wp/`
+2. Activate the plugin through the **Plugins** menu in WordPress
 3. Go to Settings > Scholar Profile to configure the plugin
 
 ## Configuration
@@ -40,6 +41,9 @@ The data can be automatically updated on a schedule or manually refreshed as nee
   - Monthly
   - Yearly
 - **Max Publications**: Control how many publications to fetch (50, 100, 200, 500)
+- **Update Method**:
+  - **Server** (default): WordPress retrieves the profile on the configured schedule.
+  - **Browser**: You import the data from a browser where you can open the Scholar profile. This is useful when Google Scholar blocks requests from your server.
 
 ## Usage
 
@@ -115,10 +119,44 @@ You can combine pagination and sorting options:
 - `scholar_sort_by` - Current sort field
 - `scholar_sort_order` - Current sort order
 
-### Manual Updates
+### Server Updates
 
-1. Go to Settings > Scholar Profile
-2. Click the "Refresh Profile Data" button to manually update the profile data
+With **Update Method** set to **Server**, you can refresh immediately from
+**Settings → Scholar Profile → Refresh Profile Data**. WordPress also refreshes
+the data on the configured schedule.
+
+### Browser-Assisted Import and Bookmarklet
+
+Use Browser mode when your server cannot reliably access Google Scholar.
+
+1. Go to **Settings → Scholar Profile**, select **Browser** as the update method, and save the settings.
+2. Enter and save your Google Scholar Profile ID if you have not already done so.
+3. Drag **Import Scholar Data** to your browser's bookmarks bar. Do not click the button on the WordPress settings page.
+4. Open your public Google Scholar profile and click the saved bookmarklet.
+5. The bookmarklet collects your profile details and publications, then copies the import data to the clipboard. Return to WordPress, paste it into the import box, and select **Replace profile data**.
+
+The bookmarklet starts at the first publication page and follows Google
+Scholar's pagination (`cstart=0`, `20`, `40`, and so on) until it reaches the
+configured **Max Publications** value or the final page. It uses the browser's
+existing Scholar session, which helps when an authenticated browser can access
+the profile but your server cannot.
+
+Some browsers require a fresh user action before granting clipboard access. In
+that case, the bookmarklet shows a small panel: click **Copy data**, then paste
+the JSON into the WordPress import box. If copying is still blocked, the data
+remains selected in that panel so you can press Ctrl/Cmd+C yourself.
+
+After updating the plugin, delete the previous bookmarklet and drag the button
+to the bookmarks bar again. A bookmark stores its JavaScript at the time it is
+created and does not update itself.
+
+#### Fallback: import page HTML
+
+If you cannot use the bookmarklet, open the profile page, select all, copy, and
+paste it into the import box. Use **Replace profile data** for the main profile
+page. For later Scholar pages such as `&cstart=20` or `&cstart=40`, paste the
+page and choose **Add publications from another page** to preserve the existing
+profile data.
 
 ## Advanced Features
 
