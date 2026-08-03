@@ -835,7 +835,106 @@ class Scraper
     return false;
   }
 
-  private function parse_main_profile_html($html, $profile_id)
+  /**
+   * Import profile data from HTML captured in the admin's own browser
+   * (browser-assisted update mode), instead of fetching it server-side.
+   *
+   * @param string $html HTML of the user's own Scholar profile page
+   * @param string $profile_id The Google Scholar profile ID
+   * @param bool $skip_avatar_download Skip downloading avatar/coauthor images
+   * @return array|false Profile data array on success, false on failure
+   */
+  public function import_main_profile_html(string $html, string $profile_id, bool $skip_avatar_download = false)
+  {
+    if (empty($html)) {
+      $this->last_error_details = array(
+        'type' => 'empty_input',
+        'message' => 'No HTML content provided'
+      );
+      return false;
+    }
+
+    if (!$this->is_valid_scholar_profile($html)) {
+      return false;
+    }
+
+    $data = $this->parse_main_profile_html($html, $profile_id, $skip_avatar_download);
+
+    if ($data === false && $this->last_error_details === null) {
+      $this->last_error_details = array(
+        'type' => 'missing_profile_name',
+        'message' => 'Could not find a profile name in the pasted content.'
+      );
+    }
+
+    return $data;
+  }
+
+  /**
+   * Import a page of publications from HTML captured in the admin's own
+   * browser (e.g. a Scholar `&cstart=N` pagination page).
+   *
+   * @param string $html HTML fragment/page containing publication rows
+   * @return array Publications found in the HTML (empty array if none)
+   */
+  public function import_publications_fragment_html(string $html): array
+  {
+    if (empty($html)) {
+      return array();
+    }
+
+    return $this->extract_publications_from_html($html);
+  }
+
+  /**
+   * Import profile data produced by the browser-assisted bookmarklet,
+   * which extracts data directly from the DOM and ships it as JSON
+   * (no image URLs — avatars are not captured client-side).
+   *
+   * @param string $json JSON string produced by the bookmarklet
+   * @return array|false Profile data array on success, false on failure
+   */
+  public function import_from_bookmarklet_json(string $json)
+  {
+    $decoded = json_decode($json, true);
+
+    if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
+      $this->last_error_details = array(
+        'type' => 'invalid_json',
+        'message' => 'Could not parse pasted content as JSON: ' . json_last_error_msg()
+      );
+      return false;
+    }
+
+    if (empty($decoded['name']) || !isset($decoded['publications']) || !is_array($decoded['publications'])) {
+      $this->last_error_details = array(
+        'type' => 'invalid_bookmarklet_data',
+        'message' => 'Pasted JSON is missing required "name" or "publications" fields'
+      );
+      return false;
+    }
+
+    $citations = is_array($decoded['citations'] ?? null) ? $decoded['citations'] : array();
+
+    return array(
+      'avatar' => '',
+      'name' => (string) $decoded['name'],
+      'affiliation' => isset($decoded['affiliation']) ? (string) $decoded['affiliation'] : '',
+      'interests' => is_array($decoded['interests'] ?? null) ? $decoded['interests'] : array(),
+      'publications' => $decoded['publications'],
+      'citations' => array(
+        'total' => intval($citations['total'] ?? 0),
+        'h_index' => intval($citations['h_index'] ?? 0),
+        'i10_index' => intval($citations['i10_index'] ?? 0),
+        'since_2019' => intval($citations['since_2019'] ?? 0),
+        'h_index_2019' => intval($citations['h_index_2019'] ?? 0),
+        'i10_index_2019' => intval($citations['i10_index_2019'] ?? 0)
+      ),
+      'coauthors' => is_array($decoded['coauthors'] ?? null) ? $decoded['coauthors'] : array()
+    );
+  }
+
+  private function parse_main_profile_html($html, $profile_id, $skip_avatar_download = false)
   {
     $doc = new \DOMDocument();
     libxml_use_internal_errors(true);
@@ -860,9 +959,9 @@ class Scraper
       'coauthors' => array()
     );
 
-    $this->extract_profile_info($xpath, $data, $profile_id);
+    $this->extract_profile_info($xpath, $data, $profile_id, $skip_avatar_download);
     $this->extract_citations($xpath, $data);
-    $this->extract_coauthors($xpath, $data, $profile_id);
+    $this->extract_coauthors($xpath, $data, $profile_id, $skip_avatar_download);
 
     // Validate that we extracted meaningful data
     if (empty($data['name'])) {
@@ -921,7 +1020,7 @@ class Scraper
     return $publications;
   }
 
-  protected function extract_profile_info($xpath, &$data, $profile_id)
+  protected function extract_profile_info($xpath, &$data, $profile_id, $skip_avatar_download = false)
   {
     // Get the name first as we need it for the avatar title
     $name_node = $xpath->query("//div[@id='gsc_prf_in']")->item(0);
@@ -932,27 +1031,31 @@ class Scraper
       wp_scholar_log("Warning: Could not extract profile name");
     }
 
-    // Now get the avatar with enhanced error handling
-    $avatar_node = $xpath->query("//img[@id='gsc_prf_pup-img']")->item(0);
-    if ($avatar_node) {
-      $avatar_url = $avatar_node->getAttribute('src');
-      wp_scholar_log("Found avatar URL: $avatar_url");
-
-      if (!empty($avatar_url)) {
-        $data['avatar'] = $this->download_to_media_library(
-          $avatar_url,
-          $profile_id,
-          sprintf('Scholar Profile Avatar - %s', $data['name'] ?: $profile_id)
-        );
-
-        if ($data['avatar']) {
-          wp_scholar_log("Avatar successfully downloaded: " . $data['avatar']);
-        } else {
-          wp_scholar_log("Avatar download failed for URL: $avatar_url");
-        }
-      }
+    if ($skip_avatar_download) {
+      wp_scholar_log("Avatar download skipped (browser import mode)");
     } else {
-      wp_scholar_log("No avatar found in profile");
+      // Now get the avatar with enhanced error handling
+      $avatar_node = $xpath->query("//img[@id='gsc_prf_pup-img']")->item(0);
+      if ($avatar_node) {
+        $avatar_url = $avatar_node->getAttribute('src');
+        wp_scholar_log("Found avatar URL: $avatar_url");
+
+        if (!empty($avatar_url)) {
+          $data['avatar'] = $this->download_to_media_library(
+            $avatar_url,
+            $profile_id,
+            sprintf('Scholar Profile Avatar - %s', $data['name'] ?: $profile_id)
+          );
+
+          if ($data['avatar']) {
+            wp_scholar_log("Avatar successfully downloaded: " . $data['avatar']);
+          } else {
+            wp_scholar_log("Avatar download failed for URL: $avatar_url");
+          }
+        }
+      } else {
+        wp_scholar_log("No avatar found in profile");
+      }
     }
 
     $affiliation_node = $xpath->query("//div[@class='gsc_prf_il']")->item(0);
@@ -993,7 +1096,7 @@ class Scraper
     }
   }
 
-  protected function extract_coauthors($xpath, &$data, $profile_id)
+  protected function extract_coauthors($xpath, &$data, $profile_id, $skip_avatar_download = false)
   {
     $coauthors = $xpath->query("//div[contains(@class, 'gsc_rsb_aa')]");
 
@@ -1014,7 +1117,7 @@ class Scraper
         preg_match('/user=([^&]+)/', $href, $user_matches);
         $coauthor_cache_id = !empty($user_matches[1]) ? $user_matches[1] : 'coauthor_' . md5($name);
 
-        if ($avatar_url) {
+        if ($avatar_url && !$skip_avatar_download) {
           wp_scholar_log("Processing coauthor avatar for: $name");
           $local_avatar = $this->download_to_media_library(
             $avatar_url,

@@ -164,6 +164,7 @@ class PluginTest extends TestCase
             'show_coauthors' => '1',
             'update_frequency' => 'weekly',
             'max_publications' => '200',
+            'update_method' => 'server',
         ];
 
         $this->assertArrayHasKey('profile_id', $defaults);
@@ -174,6 +175,7 @@ class PluginTest extends TestCase
         $this->assertSame('1', $defaults['show_coauthors']);
         $this->assertSame('weekly', $defaults['update_frequency']);
         $this->assertSame('200', $defaults['max_publications']);
+        $this->assertSame('server', $defaults['update_method']);
     }
 
     // ==========================================

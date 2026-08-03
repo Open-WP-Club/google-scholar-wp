@@ -301,7 +301,8 @@
   min-height: 1.5rem;
 }
 
-.scholar-checkbox-label input[type="checkbox"] {
+.scholar-checkbox-label input[type="checkbox"],
+.scholar-checkbox-label input[type="radio"] {
   margin: 0 0.5rem 0 0 !important;
   flex-shrink: 0;
   vertical-align: baseline;

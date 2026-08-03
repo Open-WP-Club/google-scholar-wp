@@ -544,4 +544,188 @@ class ScraperTest extends TestCase
         $result = $scraper->cleanup_old_images('test123ABC');
         $this->assertSame(2, $result);
     }
+
+    // ==========================================
+    // import_main_profile_html
+    // ==========================================
+
+    public function test_import_main_profile_html_skips_avatar_download_when_requested(): void
+    {
+        $scraper = new Scraper();
+        $html = file_get_contents($this->fixturesDir . 'scholar-profile-main.html');
+
+        // If avatar download is truly skipped, none of these should be touched.
+        Functions\expect('get_posts')->never();
+        Functions\expect('download_url')->never();
+        Functions\expect('wp_remote_get')->never();
+        Functions\expect('media_handle_sideload')->never();
+
+        $result = $scraper->import_main_profile_html($html, 'test123ABC', true);
+
+        $this->assertIsArray($result);
+        $this->assertSame('John Researcher', $result['name']);
+        $this->assertSame('Stanford University', $result['affiliation']);
+        $this->assertSame('', $result['avatar']);
+    }
+
+    public function test_import_main_profile_html_downloads_avatar_by_default(): void
+    {
+        $scraper = new Scraper();
+        $html = file_get_contents($this->fixturesDir . 'scholar-profile-main.html');
+        $this->mockAvatarDownloadDependencies();
+
+        $result = $scraper->import_main_profile_html($html, 'test123ABC');
+
+        $this->assertIsArray($result);
+        $this->assertSame('John Researcher', $result['name']);
+    }
+
+    public function test_import_main_profile_html_skips_coauthor_avatar_downloads(): void
+    {
+        $scraper = new Scraper();
+        $html = file_get_contents($this->fixturesDir . 'scholar-profile-main.html');
+
+        Functions\expect('get_posts')->never();
+        Functions\expect('download_url')->never();
+        Functions\expect('wp_remote_get')->never();
+
+        $result = $scraper->import_main_profile_html($html, 'test123ABC', true);
+
+        $this->assertCount(2, $result['coauthors']);
+        $this->assertSame('', $result['coauthors'][0]['avatar']);
+        $this->assertSame('', $result['coauthors'][1]['avatar']);
+    }
+
+    public function test_import_main_profile_html_returns_false_for_invalid_content(): void
+    {
+        $scraper = new Scraper();
+        $html = '<html><body><div>Not a scholar profile</div></body></html>';
+
+        $result = $scraper->import_main_profile_html($html, 'test123ABC', true);
+        $this->assertFalse($result);
+    }
+
+    public function test_import_main_profile_html_sets_error_when_name_missing(): void
+    {
+        $scraper = new Scraper();
+        // Has 'gsc_prf' so it passes the validity gate, but no actual name node.
+        $html = '<html><body><div id="gsc_prf"><div id="gsc_prf_in"></div></div></body></html>';
+
+        $result = $scraper->import_main_profile_html($html, 'test123ABC', true);
+
+        $this->assertFalse($result);
+        $this->assertNotNull($scraper->get_last_error_details());
+    }
+
+    public function test_import_main_profile_html_returns_false_for_empty_input(): void
+    {
+        $scraper = new Scraper();
+        $result = $scraper->import_main_profile_html('', 'test123ABC', true);
+
+        $this->assertFalse($result);
+        $this->assertSame('empty_input', $scraper->get_last_error_details()['type']);
+    }
+
+    // ==========================================
+    // import_publications_fragment_html
+    // ==========================================
+
+    public function test_import_publications_fragment_html_extracts_rows(): void
+    {
+        $scraper = new Scraper();
+        $html = file_get_contents($this->fixturesDir . 'scholar-profile-publications.html');
+
+        $pubs = $scraper->import_publications_fragment_html($html);
+
+        $this->assertCount(4, $pubs);
+    }
+
+    public function test_import_publications_fragment_html_empty_input(): void
+    {
+        $scraper = new Scraper();
+        $this->assertSame([], $scraper->import_publications_fragment_html(''));
+    }
+
+    // ==========================================
+    // import_from_bookmarklet_json
+    // ==========================================
+
+    public function test_import_from_bookmarklet_json_valid(): void
+    {
+        $scraper = new Scraper();
+        $json = json_encode([
+            'name' => 'Jane Bookmarklet',
+            'affiliation' => 'Example University',
+            'interests' => [['text' => 'Robotics', 'url' => 'https://scholar.google.com/x']],
+            'citations' => [
+                'total' => 500,
+                'h_index' => 10,
+                'i10_index' => 8,
+                'since_2019' => 300,
+                'h_index_2019' => 9,
+                'i10_index_2019' => 7,
+            ],
+            'coauthors' => [['name' => 'Bob', 'profile_url' => 'https://scholar.google.com/y', 'title' => 'MIT', 'avatar' => '']],
+            'publications' => [
+                ['title' => 'Paper One', 'year' => '2021', 'citations' => 12],
+            ],
+        ]);
+
+        $result = $scraper->import_from_bookmarklet_json($json);
+
+        $this->assertIsArray($result);
+        $this->assertSame('Jane Bookmarklet', $result['name']);
+        $this->assertSame('Example University', $result['affiliation']);
+        $this->assertSame('', $result['avatar']);
+        $this->assertSame(500, $result['citations']['total']);
+        $this->assertSame(10, $result['citations']['h_index']);
+        $this->assertCount(1, $result['publications']);
+        $this->assertSame('Paper One', $result['publications'][0]['title']);
+        $this->assertCount(1, $result['coauthors']);
+    }
+
+    public function test_import_from_bookmarklet_json_invalid_json_returns_false(): void
+    {
+        $scraper = new Scraper();
+        $result = $scraper->import_from_bookmarklet_json('{not valid json');
+
+        $this->assertFalse($result);
+        $this->assertSame('invalid_json', $scraper->get_last_error_details()['type']);
+    }
+
+    public function test_import_from_bookmarklet_json_missing_name_returns_false(): void
+    {
+        $scraper = new Scraper();
+        $json = json_encode(['publications' => [['title' => 'Paper']]]);
+
+        $result = $scraper->import_from_bookmarklet_json($json);
+
+        $this->assertFalse($result);
+        $this->assertSame('invalid_bookmarklet_data', $scraper->get_last_error_details()['type']);
+    }
+
+    public function test_import_from_bookmarklet_json_missing_publications_returns_false(): void
+    {
+        $scraper = new Scraper();
+        $json = json_encode(['name' => 'Jane']);
+
+        $result = $scraper->import_from_bookmarklet_json($json);
+
+        $this->assertFalse($result);
+        $this->assertSame('invalid_bookmarklet_data', $scraper->get_last_error_details()['type']);
+    }
+
+    public function test_import_from_bookmarklet_json_defaults_missing_optional_fields(): void
+    {
+        $scraper = new Scraper();
+        $json = json_encode(['name' => 'Jane', 'publications' => []]);
+
+        $result = $scraper->import_from_bookmarklet_json($json);
+
+        $this->assertIsArray($result);
+        $this->assertSame('', $result['affiliation']);
+        $this->assertSame([], $result['interests']);
+        $this->assertSame([], $result['coauthors']);
+        $this->assertSame(0, $result['citations']['total']);
+    }
 }

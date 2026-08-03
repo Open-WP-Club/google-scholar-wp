@@ -12,10 +12,14 @@ class SettingsTest extends TestCase
 {
     use MockeryPHPUnitIntegration;
 
+    private string $fixturesDir;
+
     protected function setUp(): void
     {
         parent::setUp();
         Monkey\setUp();
+
+        $this->fixturesDir = dirname(__DIR__) . '/Fixtures/';
 
         // Mock sanitize_text_field to just trim and strip tags
         Functions\when('sanitize_text_field')->alias(function ($str) {
@@ -149,6 +153,32 @@ class SettingsTest extends TestCase
         $this->assertSame(100, $result['max_publications']);
     }
 
+    // --- Update method validation ---
+
+    public function test_valid_update_methods(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+
+        foreach (['server', 'browser'] as $method) {
+            $result = $settings->sanitize_settings(['update_method' => $method]);
+            $this->assertSame($method, $result['update_method'], "Update method '$method' should be accepted");
+        }
+    }
+
+    public function test_invalid_update_method_defaults_to_server(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $result = $settings->sanitize_settings(['update_method' => 'carrier_pigeon']);
+        $this->assertSame('server', $result['update_method']);
+    }
+
+    public function test_missing_update_method_defaults_to_server(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $result = $settings->sanitize_settings([]);
+        $this->assertSame('server', $result['update_method']);
+    }
+
     // --- Complete output ---
 
     public function test_sanitize_returns_all_expected_keys(): void
@@ -162,18 +192,20 @@ class SettingsTest extends TestCase
             'show_coauthors' => '1',
             'update_frequency' => 'weekly',
             'max_publications' => 200,
+            'update_method' => 'server',
         ]);
 
         $expected_keys = [
             'profile_id', 'show_avatar', 'show_info',
             'show_publications', 'show_coauthors',
-            'update_frequency', 'max_publications'
+            'update_frequency', 'max_publications',
+            'update_method'
         ];
 
         foreach ($expected_keys as $key) {
             $this->assertArrayHasKey($key, $result, "Result should contain key '$key'");
         }
-        $this->assertCount(7, $result);
+        $this->assertCount(8, $result);
     }
 
     // --- Constructor hooks ---
@@ -181,7 +213,7 @@ class SettingsTest extends TestCase
     public function test_constructor_registers_expected_hooks(): void
     {
         Functions\expect('add_action')
-            ->times(5);
+            ->times(6);
 
         Functions\expect('add_filter')
             ->once();
@@ -189,5 +221,140 @@ class SettingsTest extends TestCase
         Functions\when('plugin_basename')->justReturn('google-scholar-wp/wp-google-scholar.php');
 
         new Settings();
+    }
+
+    // ==========================================
+    // build_import_data (browser-assisted import)
+    // ==========================================
+
+    public function test_build_import_data_empty_content_returns_error(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $result = $settings->build_import_data('   ', [], 'test123ABC');
+
+        $this->assertArrayHasKey('error', $result);
+        $this->assertSame('empty_content', $result['error']['type']);
+    }
+
+    public function test_build_import_data_valid_bookmarklet_json(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $json = json_encode([
+            'name' => 'Jane Bookmarklet',
+            'publications' => [['title' => 'Paper One', 'google_scholar_url' => 'https://scholar.google.com/x']],
+        ]);
+
+        $result = $settings->build_import_data($json, [], 'test123ABC');
+
+        $this->assertArrayHasKey('data', $result);
+        $this->assertSame('Jane Bookmarklet', $result['data']['name']);
+        $this->assertCount(1, $result['data']['publications']);
+    }
+
+    public function test_build_import_data_invalid_json_returns_error(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $result = $settings->build_import_data('{not valid json', [], 'test123ABC');
+
+        $this->assertArrayHasKey('error', $result);
+        $this->assertSame('invalid_json', $result['error']['type']);
+    }
+
+    public function test_build_import_data_main_profile_html(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $html = file_get_contents($this->fixturesDir . 'scholar-profile-main.html');
+
+        // Avatar download must never be attempted for browser-mode imports.
+        Functions\expect('get_posts')->never();
+        Functions\expect('download_url')->never();
+
+        $result = $settings->build_import_data($html, [], 'test123ABC');
+
+        $this->assertArrayHasKey('data', $result);
+        $this->assertSame('John Researcher', $result['data']['name']);
+        $this->assertSame('', $result['data']['avatar']);
+        $this->assertCount(3, $result['data']['publications']);
+    }
+
+    public function test_build_import_data_unrecognized_content_returns_error(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $result = $settings->build_import_data('<html><body>Just a random page</body></html>', [], 'test123ABC');
+
+        $this->assertArrayHasKey('error', $result);
+        $this->assertSame('unrecognized_content', $result['error']['type']);
+    }
+
+    public function test_build_import_data_fragment_without_base_profile_returns_error(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $html = file_get_contents($this->fixturesDir . 'scholar-profile-publications.html');
+
+        $result = $settings->build_import_data($html, [], 'test123ABC');
+
+        $this->assertArrayHasKey('error', $result);
+        $this->assertSame('no_base_profile', $result['error']['type']);
+    }
+
+    public function test_build_import_data_fragment_merges_into_existing(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $html = file_get_contents($this->fixturesDir . 'scholar-profile-publications.html');
+        $existing = [
+            'name' => 'Jane Existing',
+            'publications' => [
+                ['title' => 'Old Paper', 'google_scholar_url' => 'https://scholar.google.com/old'],
+            ],
+        ];
+
+        $result = $settings->build_import_data($html, $existing, 'test123ABC');
+
+        $this->assertArrayHasKey('data', $result);
+        $this->assertSame('Jane Existing', $result['data']['name']);
+        $this->assertCount(5, $result['data']['publications']); // 1 existing + 4 from fragment
+    }
+
+    public function test_build_import_data_fragment_dedupes_by_url(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $html = <<<'HTML'
+<html><body>
+<table><tbody id="gsc_a_b">
+<tr class="gsc_a_tr">
+  <td class="gsc_a_t">
+    <a class="gsc_a_at" href="/citations?view_op=view_citation&citation_for_view=test123:dup1">Duplicate Paper</a>
+    <div class="gs_gray">A Author</div>
+    <div class="gs_gray">Some Venue, 2020</div>
+  </td>
+  <td class="gsc_a_c"><a class="gsc_a_ac gs_ibl" href="/scholar?cites=1">10</a></td>
+  <td class="gsc_a_y"><span class="gsc_a_h gsc_a_hc gs_ibl">2020</span></td>
+</tr>
+<tr class="gsc_a_tr">
+  <td class="gsc_a_t">
+    <a class="gsc_a_at" href="/citations?view_op=view_citation&citation_for_view=test123:new1">New Paper</a>
+    <div class="gs_gray">B Author</div>
+    <div class="gs_gray">Other Venue, 2021</div>
+  </td>
+  <td class="gsc_a_c"><a class="gsc_a_ac gs_ibl" href="/scholar?cites=2">5</a></td>
+  <td class="gsc_a_y"><span class="gsc_a_h gsc_a_hc gs_ibl">2021</span></td>
+</tr>
+</tbody></table>
+</body></html>
+HTML;
+        $existing = [
+            'name' => 'Jane Existing',
+            'publications' => [
+                [
+                    'title' => 'Duplicate Paper',
+                    'google_scholar_url' => 'https://scholar.google.com/citations?view_op=view_citation&citation_for_view=test123:dup1',
+                ],
+            ],
+        ];
+
+        $result = $settings->build_import_data($html, $existing, 'test123ABC');
+
+        $this->assertArrayHasKey('data', $result);
+        $this->assertCount(2, $result['data']['publications']); // duplicate skipped, new one added
     }
 }

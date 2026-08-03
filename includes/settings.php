@@ -24,6 +24,7 @@ private const MIN_PROFILE_ID_LENGTH = 8;
     add_action('admin_init', array($this, 'handle_form_submission'));
     add_action('admin_post_refresh_scholar_profile', array($this, 'handle_manual_refresh'));
     add_action('admin_post_clear_stale_data', array($this, 'handle_clear_stale_data'));
+    add_action('admin_post_import_scholar_profile', array($this, 'handle_import_scholar_profile'));
     add_filter(
       'plugin_action_links_' . plugin_basename(WP_SCHOLAR_PLUGIN_DIR . 'wp-google-scholar.php'),
       array($this, 'add_settings_link')
@@ -275,6 +276,174 @@ private const MIN_PROFILE_ID_LENGTH = 8;
     exit;
   }
 
+  /**
+   * Handle browser-assisted import: data pasted from the bookmarklet (JSON)
+   * or copied directly from a Scholar profile page (HTML), captured in the
+   * admin's own browser instead of fetched server-side.
+   */
+  public function handle_import_scholar_profile()
+  {
+    if (!current_user_can('manage_options')) {
+      wp_die(__('You do not have sufficient permissions to access this page.'));
+    }
+
+    if (!isset($_POST['scholar_import_nonce']) || !wp_verify_nonce($_POST['scholar_import_nonce'], 'import_scholar_profile')) {
+      wp_die(__('Security check failed.'));
+    }
+
+    $options = get_option($this->option_name);
+    $existing_data = get_option('scholar_profile_data', array());
+    $content = isset($_POST['scholar_import_content']) ? wp_unslash($_POST['scholar_import_content']) : '';
+
+    $result = $this->build_import_data(
+      $content,
+      is_array($existing_data) ? $existing_data : array(),
+      $options['profile_id'] ?? ''
+    );
+
+    if (isset($result['error'])) {
+      wp_scholar_log('Browser import failed: ' . ($result['error']['message'] ?? 'Unknown error'), 'error');
+      update_option('scholar_profile_last_error_details', $result['error']);
+
+      wp_safe_redirect(add_query_arg(
+        array(
+          'page' => $this->page_slug,
+          'import' => 'failed',
+          'error_type' => $result['error']['type'] ?? 'unknown'
+        ),
+        admin_url('options-general.php')
+      ));
+      exit;
+    }
+
+    $data = $result['data'];
+
+    if (!Scraper::validate_scraped_data($data)) {
+      wp_safe_redirect(add_query_arg(
+        array('page' => $this->page_slug, 'import' => 'failed', 'error_type' => 'validation_failed'),
+        admin_url('options-general.php')
+      ));
+      exit;
+    }
+
+    update_option('scholar_profile_data', $data);
+    update_option('scholar_profile_last_update', time());
+    delete_option('scholar_profile_consecutive_failures');
+    delete_option('scholar_profile_last_error_details');
+
+    $scheduler = new Scheduler();
+    $scheduler->update_data_status('success', sprintf(
+      'Imported via browser at %s - Found %d publications',
+      wp_date('Y-m-d H:i:s'),
+      count($data['publications'])
+    ));
+
+    wp_scholar_log('Browser import successful for profile: ' . ($options['profile_id'] ?? ''));
+
+    wp_safe_redirect(add_query_arg(
+      array('page' => $this->page_slug, 'import' => 'success'),
+      admin_url('options-general.php')
+    ));
+    exit;
+  }
+
+  /**
+   * Work out what to do with browser-assisted import content, without any
+   * WordPress redirect/die side effects - kept separate so it's unit
+   * testable.
+   *
+   * @param string $content Raw pasted content (JSON from the bookmarklet, or HTML)
+   * @param array $existing_data Currently stored scholar_profile_data (for appending extra pages)
+   * @param string $profile_id The configured Google Scholar profile ID
+   * @return array Either ['data' => array] on success or ['error' => array] on failure
+   */
+  public function build_import_data(string $content, array $existing_data, string $profile_id): array
+  {
+    $content = trim($content);
+
+    if ($content === '') {
+      return array('error' => array(
+        'type' => 'empty_content',
+        'message' => 'No content was pasted.'
+      ));
+    }
+
+    $scraper = new Scraper();
+
+    // Bookmarklet output is a JSON object.
+    if ($content[0] === '{') {
+      $data = $scraper->import_from_bookmarklet_json($content);
+      if ($data === false) {
+        return array('error' => $scraper->get_last_error_details());
+      }
+      return array('data' => $data);
+    }
+
+    // A full profile page (contains the profile container) replaces
+    // profile info and its first page of publications.
+    if (strpos($content, 'gsc_prf') !== false) {
+      $data = $scraper->import_main_profile_html($content, $profile_id, true);
+      if ($data === false) {
+        return array('error' => $scraper->get_last_error_details());
+      }
+      // The main profile page also embeds its first page of publications.
+      $data['publications'] = $scraper->import_publications_fragment_html($content);
+      return array('data' => $data);
+    }
+
+    // A pagination-only page (no profile container) is appended to
+    // whatever profile data is already stored.
+    if (strpos($content, 'gsc_a_tr') !== false) {
+      $new_publications = $scraper->import_publications_fragment_html($content);
+
+      if (empty($new_publications)) {
+        return array('error' => array(
+          'type' => 'no_publications_found',
+          'message' => 'No publications were found in the pasted content.'
+        ));
+      }
+
+      if (empty($existing_data) || empty($existing_data['name'])) {
+        return array('error' => array(
+          'type' => 'no_base_profile',
+          'message' => 'Please import the main profile page first before adding extra pages.'
+        ));
+      }
+
+      $data = $existing_data;
+      $data['publications'] = $this->merge_publications($existing_data['publications'] ?? array(), $new_publications);
+      return array('data' => $data);
+    }
+
+    return array('error' => array(
+      'type' => 'unrecognized_content',
+      'message' => "This doesn't look like a Google Scholar profile page."
+    ));
+  }
+
+  /**
+   * Append new publications onto existing ones, skipping any that already
+   * exist (matched by Scholar URL, falling back to title).
+   */
+  private function merge_publications(array $existing, array $new): array
+  {
+    $seen = array();
+    foreach ($existing as $pub) {
+      $key = $pub['google_scholar_url'] ?? $pub['title'] ?? '';
+      $seen[$key] = true;
+    }
+
+    foreach ($new as $pub) {
+      $key = $pub['google_scholar_url'] ?? $pub['title'] ?? '';
+      if (!isset($seen[$key])) {
+        $existing[] = $pub;
+        $seen[$key] = true;
+      }
+    }
+
+    return $existing;
+  }
+
   public function render_settings_page()
   {
     if (!current_user_can('manage_options')) {
@@ -331,7 +500,22 @@ private const MIN_PROFILE_ID_LENGTH = 8;
         );
       }
     }
-    // Only check for settings-updated if refresh is NOT set
+    // Handle browser-assisted import status messages
+    elseif (isset($_GET['import'])) {
+      if ($_GET['import'] === 'success') {
+        $messages[] = array(
+          'type' => 'updated',
+          'message' => __('✓ Profile data imported successfully!', 'wp-google-scholar')
+        );
+      } elseif ($_GET['import'] === 'failed') {
+        $messages[] = array(
+          'type' => 'error',
+          'message' => '⚠ ' . $this->get_import_error_message($_GET),
+          'is_html' => true
+        );
+      }
+    }
+    // Only check for settings-updated if refresh/import are NOT set
     elseif (isset($_GET['settings-updated']) && $_GET['settings-updated'] === 'true') {
       $messages[] = array(
         'type' => 'updated',
@@ -348,7 +532,55 @@ private const MIN_PROFILE_ID_LENGTH = 8;
       );
     }
 
+    $bookmarklet_href = $this->build_bookmarklet_href($options['max_publications'] ?? 200);
+
     include WP_SCHOLAR_PLUGIN_DIR . 'views/settings-page.php';
+  }
+
+  /**
+   * Get an error message for a failed browser-assisted import
+   */
+  private function get_import_error_message($get_params)
+  {
+    $error_details = get_option('scholar_profile_last_error_details');
+
+    if ($error_details) {
+      $message = $this->format_detailed_error_message($error_details);
+      if ($message) {
+        return $message;
+      }
+      if (isset($error_details['message'])) {
+        return esc_html($error_details['message']);
+      }
+    }
+
+    if (isset($get_params['error_type']) && $get_params['error_type'] === 'validation_failed') {
+      return __('The imported data did not look complete enough to save. Please make sure you copied the full profile page.', 'wp-google-scholar');
+    }
+
+    return __('Could not import the pasted content. Please check it and try again.', 'wp-google-scholar');
+  }
+
+  /**
+   * Build the "javascript:" bookmarklet link from the bundled JS asset,
+   * with the configured max publications baked in.
+   */
+  private function build_bookmarklet_href($max_publications): string
+  {
+    $js_path = WP_SCHOLAR_PLUGIN_DIR . 'assets/js/scholar-bookmarklet.js';
+    $js = file_exists($js_path) ? file_get_contents($js_path) : false;
+
+    if ($js === false) {
+      return '';
+    }
+
+    // Strip the leading doc comment and collapse blank lines to keep the
+    // generated bookmarklet link reasonably short.
+    $js = preg_replace('#^/\*\*.*?\*/\s*#s', '', $js, 1);
+    $js = preg_replace('/\n\s*\n/', "\n", $js);
+    $js = str_replace('__MAX_PUBLICATIONS__', (string) intval($max_publications), $js);
+
+    return 'javascript:' . rawurlencode($js);
   }
 
   /**
@@ -458,6 +690,12 @@ private const MIN_PROFILE_ID_LENGTH = 8;
     $valid_max_pubs = array(50, 100, 200, 500);
     if (!in_array($sanitized['max_publications'], $valid_max_pubs)) {
       $sanitized['max_publications'] = 200;
+    }
+
+    // Update Method: server (automatic cron scraping) or browser (manual import)
+    $sanitized['update_method'] = sanitize_text_field($input['update_method'] ?? 'server');
+    if (!in_array($sanitized['update_method'], array('server', 'browser'))) {
+      $sanitized['update_method'] = 'server';
     }
 
     return $sanitized;

@@ -33,8 +33,16 @@ class Scheduler
    */
   public function activate(): void
   {
-    if (!wp_next_scheduled($this->hook)) {
-      $options = get_option('scholar_profile_settings');
+    $options = get_option('scholar_profile_settings');
+    $update_method = $options['update_method'] ?? 'server';
+
+    if ($update_method === 'browser') {
+      // Browser-assisted mode never scrapes automatically - make sure no
+      // leftover schedule from a previous "server" mode keeps firing.
+      if (wp_next_scheduled($this->hook)) {
+        wp_clear_scheduled_hook($this->hook);
+      }
+    } elseif (!wp_next_scheduled($this->hook)) {
       $frequency = $options['update_frequency'] ?? 'weekly';
       $valid = ['daily', 'weekly', 'monthly', 'yearly'];
       if (!in_array($frequency, $valid, true)) {

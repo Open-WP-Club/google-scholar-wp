@@ -356,11 +356,48 @@ class SchedulerTest extends TestCase
     {
         $scheduler = $this->createSchedulerWithoutConstructor();
 
+        Functions\expect('get_option')
+            ->with('scholar_profile_settings')
+            ->andReturn(['update_frequency' => 'weekly']);
         Functions\expect('wp_next_scheduled')
             ->with('scholar_profile_update')
             ->andReturn(1700000000);
         Functions\expect('wp_schedule_event')
             ->never();
+
+        $scheduler->activate();
+    }
+
+    public function test_activate_browser_mode_does_not_schedule_update(): void
+    {
+        $scheduler = $this->createSchedulerWithoutConstructor();
+
+        Functions\expect('get_option')
+            ->with('scholar_profile_settings')
+            ->andReturn(['update_method' => 'browser', 'update_frequency' => 'weekly']);
+        Functions\expect('wp_next_scheduled')
+            ->with('scholar_profile_update')
+            ->andReturn(false);
+        Functions\expect('wp_schedule_event')
+            ->never()
+            ->with(\Mockery::type('int'), \Mockery::any(), 'scholar_profile_update');
+
+        $scheduler->activate();
+    }
+
+    public function test_activate_browser_mode_clears_existing_schedule(): void
+    {
+        $scheduler = $this->createSchedulerWithoutConstructor();
+
+        Functions\expect('get_option')
+            ->with('scholar_profile_settings')
+            ->andReturn(['update_method' => 'browser', 'update_frequency' => 'weekly']);
+        Functions\expect('wp_next_scheduled')
+            ->with('scholar_profile_update')
+            ->andReturn(1700000000);
+        Functions\expect('wp_clear_scheduled_hook')
+            ->once()
+            ->with('scholar_profile_update');
 
         $scheduler->activate();
     }

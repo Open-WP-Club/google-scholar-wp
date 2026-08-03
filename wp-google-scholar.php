@@ -99,7 +99,8 @@ function wp_scholar_activate()
       'show_publications' => '1',
       'show_coauthors' => '1',
       'update_frequency' => 'weekly',
-      'max_publications' => '200'
+      'max_publications' => '200',
+      'update_method' => 'server'
     ));
     wp_scholar_log("Default plugin settings created");
   } else {
@@ -109,6 +110,11 @@ function wp_scholar_activate()
 
     if (!isset($options['max_publications'])) {
       $options['max_publications'] = '200';
+      $updated = true;
+    }
+
+    if (!isset($options['update_method'])) {
+      $options['update_method'] = 'server';
       $updated = true;
     }
 
