@@ -265,15 +265,18 @@ class SettingsTest extends TestCase
         $settings = $this->createSettingsWithoutConstructor();
         $html = file_get_contents($this->fixturesDir . 'scholar-profile-main.html');
 
-        // Avatar download must never be attempted for browser-mode imports.
-        Functions\expect('get_posts')->never();
-        Functions\expect('download_url')->never();
+        // The main profile avatar is attempted (single request); coauthor
+        // avatars are always skipped for browser-mode imports.
+        Functions\expect('get_posts')->once()->andReturn([]);
+        Functions\when('get_transient')->justReturn(false);
+        Functions\when('download_url')->justReturn(new \WP_Error('test', 'mocked'));
+        Functions\when('wp_remote_get')->justReturn(new \WP_Error('test', 'mocked'));
+        Functions\when('set_transient')->justReturn(true);
 
         $result = $settings->build_import_data($html, [], 'test123ABC');
 
         $this->assertArrayHasKey('data', $result);
         $this->assertSame('John Researcher', $result['data']['name']);
-        $this->assertSame('', $result['data']['avatar']);
         $this->assertCount(3, $result['data']['publications']);
     }
 

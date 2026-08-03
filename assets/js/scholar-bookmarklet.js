@@ -79,9 +79,15 @@
       }
     ).filter(Boolean);
 
+    // Only the avatar's URL is captured here, never its bytes - fetching
+    // the image itself from this origin would risk CORS. WordPress
+    // downloads it server-side from this URL instead.
+    var avatarImg = document.getElementById('gsc_prf_pup-img');
+
     return {
       name: text(document.getElementById('gsc_prf_in')),
       affiliation: text(document.querySelector('.gsc_prf_il')),
+      avatar_url: avatarImg ? avatarImg.src : '',
       interests: interests,
       citations: citations,
       coauthors: coauthors

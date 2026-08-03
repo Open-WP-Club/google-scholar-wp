@@ -29,9 +29,14 @@ to the WordPress site from the scholar.google.com origin.
 
 ## Non-goals (v1)
 
-- Avatar / co-author image capture in browser mode (skipped entirely; those
-  fields stay empty or retain whatever the last successful server-side fetch
-  set).
+- Co-author avatar downloads in browser mode (always skipped — decorative,
+  and multiply per co-author, so not worth the extra requests). The main
+  profile avatar *is* fetched: its URL travels with the imported data (already
+  present in pasted HTML; the bookmarklet adds it as a plain string field,
+  never fetching image bytes itself) and WordPress downloads it server-side
+  with the existing `download_to_media_library()` — a single lightweight
+  request to a different host than Scholar's HTML pages, much less likely to
+  be blocked than the bulk scraping this mode exists to avoid.
 - Any new authentication mechanism (API keys, REST routes, CORS headers).
 - Automating the browser-mode flow itself — it remains a manual, admin-
   triggered action every time.

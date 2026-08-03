@@ -372,7 +372,7 @@ private const MIN_PROFILE_ID_LENGTH = 8;
 
     // Bookmarklet output is a JSON object.
     if ($content[0] === '{') {
-      $data = $scraper->import_from_bookmarklet_json($content);
+      $data = $scraper->import_from_bookmarklet_json($content, $profile_id);
       if ($data === false) {
         return array('error' => $scraper->get_last_error_details());
       }
@@ -380,9 +380,10 @@ private const MIN_PROFILE_ID_LENGTH = 8;
     }
 
     // A full profile page (contains the profile container) replaces
-    // profile info and its first page of publications.
+    // profile info and its first page of publications. The main avatar is
+    // downloaded (a single request); coauthor avatars are always skipped.
     if (strpos($content, 'gsc_prf') !== false) {
-      $data = $scraper->import_main_profile_html($content, $profile_id, true);
+      $data = $scraper->import_main_profile_html($content, $profile_id, false);
       if ($data === false) {
         return array('error' => $scraper->get_last_error_details());
       }

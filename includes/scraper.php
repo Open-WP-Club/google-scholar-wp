@@ -858,7 +858,9 @@ class Scraper
       return false;
     }
 
-    $data = $this->parse_main_profile_html($html, $profile_id, $skip_avatar_download);
+    // Coauthor avatars are never fetched for browser-assisted imports -
+    // only the main profile avatar is ever worth the extra request(s).
+    $data = $this->parse_main_profile_html($html, $profile_id, $skip_avatar_download, true);
 
     if ($data === false && $this->last_error_details === null) {
       $this->last_error_details = array(
@@ -892,9 +894,10 @@ class Scraper
    * (no image URLs — avatars are not captured client-side).
    *
    * @param string $json JSON string produced by the bookmarklet
+   * @param string $profile_id The Google Scholar profile ID (used to cache the avatar, if any)
    * @return array|false Profile data array on success, false on failure
    */
-  public function import_from_bookmarklet_json(string $json)
+  public function import_from_bookmarklet_json(string $json, string $profile_id = '')
   {
     $decoded = json_decode($json, true);
 
@@ -916,8 +919,20 @@ class Scraper
 
     $citations = is_array($decoded['citations'] ?? null) ? $decoded['citations'] : array();
 
+    // The bookmarklet only ever ships the avatar's URL (not its bytes -
+    // fetching image bytes cross-origin from the browser risks CORS). The
+    // actual download happens here, same as for HTML-pasted imports.
+    $avatar = '';
+    if (!empty($decoded['avatar_url']) && is_string($decoded['avatar_url'])) {
+      $avatar = $this->download_to_media_library(
+        $decoded['avatar_url'],
+        $profile_id !== '' ? $profile_id : (string) $decoded['name'],
+        sprintf('Scholar Profile Avatar - %s', $decoded['name'])
+      );
+    }
+
     return array(
-      'avatar' => '',
+      'avatar' => $avatar,
       'name' => (string) $decoded['name'],
       'affiliation' => isset($decoded['affiliation']) ? (string) $decoded['affiliation'] : '',
       'interests' => is_array($decoded['interests'] ?? null) ? $decoded['interests'] : array(),
@@ -934,7 +949,7 @@ class Scraper
     );
   }
 
-  private function parse_main_profile_html($html, $profile_id, $skip_avatar_download = false)
+  private function parse_main_profile_html($html, $profile_id, $skip_avatar_download = false, $skip_coauthor_avatars = false)
   {
     $doc = new \DOMDocument();
     libxml_use_internal_errors(true);
@@ -961,7 +976,7 @@ class Scraper
 
     $this->extract_profile_info($xpath, $data, $profile_id, $skip_avatar_download);
     $this->extract_citations($xpath, $data);
-    $this->extract_coauthors($xpath, $data, $profile_id, $skip_avatar_download);
+    $this->extract_coauthors($xpath, $data, $profile_id, $skip_coauthor_avatars);
 
     // Validate that we extracted meaningful data
     if (empty($data['name'])) {

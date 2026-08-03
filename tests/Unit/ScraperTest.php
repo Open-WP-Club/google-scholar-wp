@@ -596,6 +596,25 @@ class ScraperTest extends TestCase
         $this->assertSame('', $result['coauthors'][1]['avatar']);
     }
 
+    public function test_import_main_profile_html_always_skips_coauthor_avatars(): void
+    {
+        $scraper = new Scraper();
+        $html = file_get_contents($this->fixturesDir . 'scholar-profile-main.html');
+
+        // Only the main avatar's cache check should happen (once) - never
+        // for either of the two coauthors in the fixture.
+        Functions\expect('get_posts')->once()->andReturn([]);
+        Functions\when('get_transient')->justReturn(false);
+        Functions\when('download_url')->justReturn(new \WP_Error('test', 'mocked'));
+        Functions\when('wp_remote_get')->justReturn(new \WP_Error('test', 'mocked'));
+        Functions\when('set_transient')->justReturn(true);
+
+        $result = $scraper->import_main_profile_html($html, 'test123ABC', false);
+
+        $this->assertSame('', $result['coauthors'][0]['avatar']);
+        $this->assertSame('', $result['coauthors'][1]['avatar']);
+    }
+
     public function test_import_main_profile_html_returns_false_for_invalid_content(): void
     {
         $scraper = new Scraper();
@@ -727,5 +746,36 @@ class ScraperTest extends TestCase
         $this->assertSame([], $result['interests']);
         $this->assertSame([], $result['coauthors']);
         $this->assertSame(0, $result['citations']['total']);
+    }
+
+    public function test_import_from_bookmarklet_json_skips_avatar_when_url_absent(): void
+    {
+        $scraper = new Scraper();
+        $json = json_encode(['name' => 'Jane', 'publications' => []]);
+
+        Functions\expect('get_posts')->never();
+
+        $result = $scraper->import_from_bookmarklet_json($json, 'test123ABC');
+
+        $this->assertSame('', $result['avatar']);
+    }
+
+    public function test_import_from_bookmarklet_json_attempts_avatar_download_when_url_present(): void
+    {
+        $scraper = new Scraper();
+        $json = json_encode([
+            'name' => 'Jane Bookmarklet',
+            'avatar_url' => 'https://scholar.googleusercontent.com/citations?view_op=medium_photo&user=test123ABC',
+            'publications' => [],
+        ]);
+
+        Functions\expect('get_posts')->once()->andReturn([]);
+        Functions\when('get_transient')->justReturn(false);
+        Functions\when('download_url')->justReturn(new \WP_Error('test', 'mocked'));
+        Functions\when('wp_remote_get')->justReturn(new \WP_Error('test', 'mocked'));
+
+        $result = $scraper->import_from_bookmarklet_json($json, 'test123ABC');
+
+        $this->assertIsArray($result);
     }
 }
