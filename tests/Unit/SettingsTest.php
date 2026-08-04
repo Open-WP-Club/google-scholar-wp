@@ -19,6 +19,13 @@ class SettingsTest extends TestCase
         parent::setUp();
         Monkey\setUp();
 
+        // process_import() constructs Scheduler(); its constructor guards
+        // hook registration with a static flag that must be reset between
+        // tests (same pattern as SchedulerTest::setUp()).
+        $schedulerReflection = new \ReflectionClass(\WPScholar\Scheduler::class);
+        $hooksRegisteredProp = $schedulerReflection->getProperty('hooks_registered');
+        $hooksRegisteredProp->setValue(null, false);
+
         $this->fixturesDir = dirname(__DIR__) . '/Fixtures/';
 
         // Mock sanitize_text_field to just trim and strip tags
@@ -427,5 +434,87 @@ HTML;
 
         $this->assertArrayHasKey('data', $result);
         $this->assertCount(3, $result['data']['publications']);
+    }
+
+    // ==========================================
+    // process_import (shared by admin-post form handler and REST sync endpoint)
+    // ==========================================
+
+    private function stubProcessImportEnvironment(array $options, array $existingData = array(), bool $replaceLocked = false): void
+    {
+        Functions\when('add_action')->justReturn(true);
+        Functions\when('add_filter')->justReturn(true);
+        Functions\when('get_transient')->justReturn($replaceLocked ? 1 : false);
+        Functions\when('set_transient')->justReturn(true);
+        Functions\when('update_option')->justReturn(true);
+        Functions\when('delete_option')->justReturn(true);
+        Functions\when('wp_date')->justReturn('2026-08-04 12:00:00');
+
+        Functions\when('get_option')->alias(function ($name, $default = false) use ($options, $existingData) {
+            if ($name === 'scholar_profile_settings') {
+                return $options;
+            }
+            if ($name === 'scholar_profile_data') {
+                return $existingData;
+            }
+            return $default;
+        });
+    }
+
+    public function test_process_import_rejects_when_not_in_browser_mode(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $this->stubProcessImportEnvironment(array('update_method' => 'server'));
+
+        $result = $settings->process_import('<html>gsc_prf</html>', 'replace');
+
+        $this->assertArrayHasKey('error', $result);
+        $this->assertSame('browser_mode_required', $result['error']['type']);
+    }
+
+    public function test_process_import_rejects_replace_while_locked(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $this->stubProcessImportEnvironment(
+            array('update_method' => 'browser', 'profile_id' => 'test123ABC'),
+            array(),
+            true
+        );
+
+        $result = $settings->process_import('<html>gsc_prf</html>', 'replace');
+
+        $this->assertArrayHasKey('error', $result);
+        $this->assertSame('import_rate_limited', $result['error']['type']);
+    }
+
+    public function test_process_import_saves_valid_profile_and_returns_data(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $this->stubProcessImportEnvironment(
+            array('update_method' => 'browser', 'profile_id' => 'test123ABC', 'max_publications' => 200)
+        );
+
+        Functions\expect('get_posts')->once()->andReturn([]);
+        Functions\when('download_url')->justReturn(new \WP_Error('test', 'mocked'));
+        Functions\when('wp_remote_get')->justReturn(new \WP_Error('test', 'mocked'));
+
+        $html = file_get_contents($this->fixturesDir . 'scholar-profile-main.html');
+        $result = $settings->process_import($html, 'replace');
+
+        $this->assertArrayHasKey('data', $result);
+        $this->assertSame('John Researcher', $result['data']['name']);
+    }
+
+    public function test_process_import_propagates_error_type_from_build_import_data(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $this->stubProcessImportEnvironment(
+            array('update_method' => 'browser', 'profile_id' => 'test123ABC')
+        );
+
+        $result = $settings->process_import('<html><body>Just a random page</body></html>', 'replace');
+
+        $this->assertArrayHasKey('error', $result);
+        $this->assertSame('unrecognized_content', $result['error']['type']);
     }
 }

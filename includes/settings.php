@@ -302,36 +302,68 @@ class Settings
       wp_die(__('Security check failed.'));
     }
 
-    $options = get_option($this->option_name, array());
-    if (($options['update_method'] ?? 'server') !== 'browser') {
-      wp_safe_redirect(add_query_arg(
-        array('page' => $this->page_slug, 'import' => 'failed', 'error_type' => 'browser_mode_required'),
-        admin_url('options-general.php')
-      ));
-      exit;
-    }
-
-    $existing_data = get_option('scholar_profile_data', array());
     $content = isset($_POST['scholar_import_content']) ? wp_unslash($_POST['scholar_import_content']) : '';
     $import_mode = isset($_POST['scholar_import_mode']) && $_POST['scholar_import_mode'] === 'append'
       ? 'append'
       : 'replace';
 
+    $result = $this->process_import($content, $import_mode);
+
+    if (isset($result['error'])) {
+      wp_safe_redirect(add_query_arg(
+        array(
+          'page' => $this->page_slug,
+          'import' => 'failed',
+          'error_type' => $result['error']['type'] ?? 'unknown'
+        ),
+        admin_url('options-general.php')
+      ));
+      exit;
+    }
+
+    wp_safe_redirect(add_query_arg(
+      array('page' => $this->page_slug, 'import' => 'success'),
+      admin_url('options-general.php')
+    ));
+    exit;
+  }
+
+  /**
+   * Core browser-assisted import processing, shared by the admin-post form
+   * handler above and the REST API sync endpoint (WPScholar\RestApi). No
+   * nonce, capability, or redirect side effects - callers own their own
+   * auth and response handling.
+   *
+   * @param string $content Raw pasted/POSTed content (JSON from the bookmarklet, or HTML)
+   * @param string $import_mode 'replace' or 'append'
+   * @return array Either ['data' => array] on success or ['error' => array] on failure
+   */
+  public function process_import(string $content, string $import_mode): array
+  {
+    $options = get_option($this->option_name, array());
+    if (($options['update_method'] ?? 'server') !== 'browser') {
+      return array('error' => array(
+        'type' => 'browser_mode_required',
+        'message' => 'Browser mode is not enabled for this site.'
+      ));
+    }
+
     // A full replacement may download the profile avatar. Briefly lock that
-    // action against double-clicks/back-button resubmits, while deliberately
-    // leaving append imports unrestricted for the expected cstart=N flow.
+    // action against double-clicks/back-button resubmits or overlapping
+    // sync runs, while deliberately leaving append imports unrestricted for
+    // the expected cstart=N flow.
     if ($import_mode === 'replace') {
       $lock_name = 'scholar_profile_import_replace_lock';
       if (get_transient($lock_name)) {
-        wp_safe_redirect(add_query_arg(
-          array('page' => $this->page_slug, 'import' => 'failed', 'error_type' => 'import_rate_limited'),
-          admin_url('options-general.php')
+        return array('error' => array(
+          'type' => 'import_rate_limited',
+          'message' => 'Please wait a few seconds before replacing profile data again.'
         ));
-        exit;
       }
       set_transient($lock_name, 1, self::IMPORT_REPLACE_COOLDOWN_SECONDS);
     }
 
+    $existing_data = get_option('scholar_profile_data', array());
     $result = $this->build_import_data(
       $content,
       is_array($existing_data) ? $existing_data : array(),
@@ -345,16 +377,7 @@ class Settings
       update_option('scholar_profile_last_error_details', $result['error']);
       $scheduler = new Scheduler();
       $scheduler->update_data_status('error', $result['error']['message'] ?? 'Browser import failed.');
-
-      wp_safe_redirect(add_query_arg(
-        array(
-          'page' => $this->page_slug,
-          'import' => 'failed',
-          'error_type' => $result['error']['type'] ?? 'unknown'
-        ),
-        admin_url('options-general.php')
-      ));
-      exit;
+      return $result;
     }
 
     $data = $result['data'];
@@ -367,12 +390,7 @@ class Settings
       update_option('scholar_profile_last_error_details', $error);
       $scheduler = new Scheduler();
       $scheduler->update_data_status('error', $error['message']);
-
-      wp_safe_redirect(add_query_arg(
-        array('page' => $this->page_slug, 'import' => 'failed', 'error_type' => 'validation_failed'),
-        admin_url('options-general.php')
-      ));
-      exit;
+      return array('error' => $error);
     }
 
     update_option('scholar_profile_data', $data);
@@ -389,11 +407,7 @@ class Settings
 
     wp_scholar_log('Browser import successful for profile: ' . ($options['profile_id'] ?? ''));
 
-    wp_safe_redirect(add_query_arg(
-      array('page' => $this->page_slug, 'import' => 'success'),
-      admin_url('options-general.php')
-    ));
-    exit;
+    return array('data' => $data);
   }
 
   /**
