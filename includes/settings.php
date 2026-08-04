@@ -336,9 +336,10 @@ class Settings
    *
    * @param string $content Raw pasted/POSTed content (JSON from the bookmarklet, or HTML)
    * @param string $import_mode 'replace' or 'append'
+   * @param string $source 'browser' (manual paste) or 'sync' (automated REST API)
    * @return array Either ['data' => array] on success or ['error' => array] on failure
    */
-  public function process_import(string $content, string $import_mode): array
+  public function process_import(string $content, string $import_mode, string $source = 'browser'): array
   {
     $options = get_option($this->option_name, array());
     if (($options['update_method'] ?? 'server') !== 'browser') {
@@ -399,8 +400,11 @@ class Settings
     delete_option('scholar_profile_last_error_details');
 
     $scheduler = new Scheduler();
+    $status_message = $source === 'sync'
+      ? 'Imported via automated sync at %s - Found %d publications'
+      : 'Imported via browser at %s - Found %d publications';
     $scheduler->update_data_status('success', sprintf(
-      'Imported via browser at %s - Found %d publications',
+      $status_message,
       wp_date('Y-m-d H:i:s'),
       count($data['publications'])
     ));

@@ -69,7 +69,7 @@ class RestApi
     $content = (string) $request->get_param('content');
     $import_mode = $request->get_param('import_mode') === 'append' ? 'append' : 'replace';
 
-    $result = $this->settings->process_import($content, $import_mode);
+    $result = $this->settings->process_import($content, $import_mode, 'sync');
 
     if (isset($result['error'])) {
       $type = $result['error']['type'] ?? 'unknown';

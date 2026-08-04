@@ -517,4 +517,48 @@ HTML;
         $this->assertArrayHasKey('error', $result);
         $this->assertSame('unrecognized_content', $result['error']['type']);
     }
+
+    public function test_process_import_uses_sync_status_message_when_source_is_sync(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+
+        // Set up basic environment, but we'll override update_option to capture the call
+        Functions\when('add_action')->justReturn(true);
+        Functions\when('add_filter')->justReturn(true);
+        Functions\when('get_transient')->justReturn(false);
+        Functions\when('set_transient')->justReturn(true);
+        Functions\when('delete_option')->justReturn(true);
+        Functions\when('wp_date')->justReturn('2026-08-04 12:00:00');
+
+        $options = array('update_method' => 'browser', 'profile_id' => 'test123ABC', 'max_publications' => 200);
+        Functions\when('get_option')->alias(function ($name, $default = false) use ($options) {
+            if ($name === 'scholar_profile_settings') {
+                return $options;
+            }
+            if ($name === 'scholar_profile_data') {
+                return array();
+            }
+            return $default;
+        });
+
+        // Capture the status message passed to update_option
+        $captured_status_message = null;
+        Functions\when('update_option')->alias(function ($option, $value) use (&$captured_status_message) {
+            if ($option === 'scholar_profile_data_status' && is_array($value) && isset($value['message'])) {
+                $captured_status_message = $value['message'];
+            }
+            return true;
+        });
+
+        Functions\expect('get_posts')->once()->andReturn([]);
+        Functions\when('download_url')->justReturn(new \WP_Error('test', 'mocked'));
+        Functions\when('wp_remote_get')->justReturn(new \WP_Error('test', 'mocked'));
+
+        $html = file_get_contents($this->fixturesDir . 'scholar-profile-main.html');
+        $result = $settings->process_import($html, 'replace', 'sync');
+
+        $this->assertArrayHasKey('data', $result);
+        $this->assertNotNull($captured_status_message, 'Status message should have been captured');
+        $this->assertStringContainsString('Imported via automated sync', $captured_status_message);
+    }
 }

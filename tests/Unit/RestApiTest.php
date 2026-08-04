@@ -84,7 +84,7 @@ class RestApiTest extends TestCase
         $settings = Mockery::mock(Settings::class);
         $settings->shouldReceive('process_import')
             ->once()
-            ->with('<html>...</html>', 'replace')
+            ->with('<html>...</html>', 'replace', 'sync')
             ->andReturn(array('data' => array('publications' => array(array('title' => 'A'), array('title' => 'B')))));
 
         $api = new RestApi($settings);
@@ -132,7 +132,7 @@ class RestApiTest extends TestCase
         $settings = Mockery::mock(Settings::class);
         $settings->shouldReceive('process_import')
             ->once()
-            ->with('x', 'replace')
+            ->with('x', 'replace', 'sync')
             ->andReturn(array('data' => array('publications' => array())));
 
         $api = new RestApi($settings);
