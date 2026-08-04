@@ -24,6 +24,7 @@ WP_USER="__WP_USER__"
 APP_PASSWORD="__APP_PASSWORD__"
 PROFILE_ID="__PROFILE_ID__"
 MAX_PUBLICATIONS=__MAX_PUBLICATIONS__
+IMPORT_URL="__IMPORT_URL__"
 PAGE_SIZE=20
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -58,7 +59,7 @@ import_page() {
   local mode="$2"
 
   if [[ "$DRY_RUN" -eq 1 ]]; then
-    log "[dry-run] would POST $mode (${#html} bytes of HTML) to $SITE_URL/wp-json/wp-google-scholar/v1/import"
+    log "[dry-run] would POST $mode (${#html} bytes of HTML) to $IMPORT_URL"
     return 0
   fi
 
@@ -67,7 +68,7 @@ import_page() {
     -u "${WP_USER}:${APP_PASSWORD}" \
     --data-urlencode "content=${html}" \
     --data-urlencode "import_mode=${mode}" \
-    "${SITE_URL}/wp-json/wp-google-scholar/v1/import")"
+    "${IMPORT_URL}")" || fail "Could not reach ${IMPORT_URL} (network error)"
 
   http_code="${response##*$'\n'}"
   body="${response%$'\n'*}"
@@ -89,13 +90,15 @@ log "Starting sync for profile ${PROFILE_ID}"
 MAIN_PAGE="$(fetch_page 0)"
 import_page "$MAIN_PAGE" "replace"
 
-ROW_COUNT="$(grep -o 'gsc_a_tr' <<<"$MAIN_PAGE" | wc -l | tr -d ' ')"
+# grep exits 1 on no match; || true keeps a legitimate zero-row page from aborting under set -e/pipefail
+ROW_COUNT="$( { grep -o 'gsc_a_tr' <<<"$MAIN_PAGE" || true; } | wc -l | tr -d ' ')"
 TOTAL=$ROW_COUNT
 START=$PAGE_SIZE
 
 while (( ROW_COUNT >= PAGE_SIZE && TOTAL < MAX_PUBLICATIONS )); do
   PAGE_HTML="$(fetch_page "$START")"
-  ROW_COUNT="$(grep -o 'gsc_a_tr' <<<"$PAGE_HTML" | wc -l | tr -d ' ')"
+  # grep exits 1 on no match; || true keeps a legitimate zero-row page from aborting under set -e/pipefail
+  ROW_COUNT="$( { grep -o 'gsc_a_tr' <<<"$PAGE_HTML" || true; } | wc -l | tr -d ' ')"
 
   if (( ROW_COUNT == 0 )); then
     break

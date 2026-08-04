@@ -337,13 +337,14 @@ class Settings
 
     $current_user = wp_get_current_user();
     $script = str_replace(
-      array('__SITE_URL__', '__WP_USER__', '__APP_PASSWORD__', '__PROFILE_ID__', '__MAX_PUBLICATIONS__'),
+      array('__SITE_URL__', '__WP_USER__', '__APP_PASSWORD__', '__PROFILE_ID__', '__MAX_PUBLICATIONS__', '__IMPORT_URL__'),
       array(
         home_url(),
         $current_user->user_login,
         $app_password,
         $options['profile_id'],
-        (string) intval($options['max_publications'] ?? 200)
+        (string) intval($options['max_publications'] ?? 200),
+        rest_url('wp-google-scholar/v1/import')
       ),
       $template
     );
