@@ -606,4 +606,29 @@ HTML;
         $this->assertCount(1, $remaining);
         $this->assertSame('b', $remaining[0]['uuid']);
     }
+
+    /**
+     * get_sync_credentials() is the shared scope-check that both
+     * get_active_sync_credentials() and revoke_sync_credentials() rely on,
+     * and that handle_revoke_sync_credential() uses to decide whether a
+     * POSTed uuid is allowed to be deleted. A non-sync-prefixed credential
+     * must never appear in its result, or handle_revoke_sync_credential()
+     * would be able to revoke Application Passwords outside this plugin's
+     * own scope.
+     */
+    public function test_get_sync_credentials_excludes_non_sync_prefixed_entries(): void
+    {
+        $this->setUpSyncCredentialStore();
+        \WP_Application_Passwords::$store[3] = array(
+            'x' => array('uuid' => 'x', 'name' => 'Some Other App'),
+        );
+
+        $settings = $this->createSettingsWithoutConstructor();
+        $reflection = new \ReflectionClass($settings);
+        $method = $reflection->getMethod('get_sync_credentials');
+        $method->setAccessible(true);
+        $result = $method->invoke($settings, 3);
+
+        $this->assertSame([], $result);
+    }
 }

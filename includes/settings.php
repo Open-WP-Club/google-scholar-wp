@@ -372,7 +372,13 @@ class Settings
 
     $uuid = isset($_POST['uuid']) ? sanitize_text_field($_POST['uuid']) : '';
     if ($uuid !== '') {
-      \WP_Application_Passwords::delete_application_password(get_current_user_id(), $uuid);
+      $user_id = get_current_user_id();
+      foreach ($this->get_sync_credentials($user_id) as $item) {
+        if ($item['uuid'] === $uuid) {
+          \WP_Application_Passwords::delete_application_password($user_id, $uuid);
+          break;
+        }
+      }
     }
 
     wp_safe_redirect(add_query_arg(
@@ -388,11 +394,8 @@ class Settings
    */
   private function revoke_sync_credentials(int $user_id): void
   {
-    $existing = \WP_Application_Passwords::get_user_application_passwords($user_id);
-    foreach ($existing as $item) {
-      if (isset($item['name']) && strpos($item['name'], self::SYNC_CREDENTIAL_PREFIX) === 0) {
-        \WP_Application_Passwords::delete_application_password($user_id, $item['uuid']);
-      }
+    foreach ($this->get_sync_credentials($user_id) as $item) {
+      \WP_Application_Passwords::delete_application_password($user_id, $item['uuid']);
     }
   }
 
@@ -402,7 +405,18 @@ class Settings
    */
   public function get_active_sync_credentials(): array
   {
-    $existing = \WP_Application_Passwords::get_user_application_passwords(get_current_user_id());
+    return $this->get_sync_credentials(get_current_user_id());
+  }
+
+  /**
+   * Application Passwords belonging to a user whose name carries the
+   * sync-credential prefix - the single source of truth for what counts as
+   * "in scope" for automated-sync revoke/list operations, so a revoke
+   * request can never reach outside this plugin's own credentials.
+   */
+  private function get_sync_credentials(int $user_id): array
+  {
+    $existing = \WP_Application_Passwords::get_user_application_passwords($user_id);
     return array_values(array_filter($existing, function ($item) {
       return isset($item['name']) && strpos($item['name'], self::SYNC_CREDENTIAL_PREFIX) === 0;
     }));
