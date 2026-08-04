@@ -117,3 +117,24 @@ if (!function_exists('is_wp_error')) {
         return $thing instanceof WP_Error;
     }
 }
+
+/**
+ * Minimal WP_REST_Request stub for tests - a read-only param bag standing
+ * in for WordPress core's REST request object.
+ */
+if (!class_exists('WP_REST_Request')) {
+    class WP_REST_Request
+    {
+        private $params;
+
+        public function __construct(array $params = array())
+        {
+            $this->params = $params;
+        }
+
+        public function get_param($key)
+        {
+            return $this->params[$key] ?? null;
+        }
+    }
+}

@@ -55,9 +55,10 @@ function wp_scholar_init()
   load_plugin_textdomain('wp-google-scholar', false, dirname(plugin_basename(__FILE__)) . '/languages');
 
   // Initialize classes
-  new WPScholar\Settings();
+  $settings = new WPScholar\Settings();
   new WPScholar\Shortcode();
   new WPScholar\Scheduler();
+  new WPScholar\RestApi($settings);
 }
 
 // Enqueue admin styles
