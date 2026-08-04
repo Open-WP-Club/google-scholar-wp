@@ -45,12 +45,66 @@
 }
 
 .scholar-settings-card h2 {
-  margin: 0 0 1.25rem 0;
-  font-size: 1.25rem;
+  margin: 0;
+  font-size: 1.125rem;
   font-weight: 600;
   color: #1d2327;
+}
+
+/* Numbered Steps */
+.scholar-step {
+  margin-bottom: 1.75rem;
+}
+
+.scholar-step:last-child {
+  margin-bottom: 0;
+}
+
+.scholar-step-header {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
   border-bottom: 0.0625rem solid #f0f0f1;
   padding-bottom: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.scholar-step-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background: #2271b1;
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.scholar-step-badge-action {
+  background: #00a32a;
+}
+
+.scholar-step-intro {
+  margin: 0.5rem 0 1rem 0;
+  color: #646970;
+  font-size: 0.8125rem;
+  font-style: italic;
+  line-height: 1.5;
+}
+
+/* Step 3 card: visually distinct action, separate from the settings form */
+.scholar-step-action-card {
+  border-left: 0.25rem solid #00a32a;
+}
+
+.scholar-step-action-card .scholar-refresh-section {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
 }
 
 /* Status Card */
