@@ -791,6 +791,18 @@ class Settings
         );
       }
     }
+    // Handle automated sync script download / credential revoke messages
+    elseif (isset($_GET['sync_download']) && $_GET['sync_download'] === 'failed') {
+      $messages[] = array(
+        'type' => 'error',
+        'message' => '⚠ ' . __('Enter and save a Profile ID before downloading the sync script.', 'wp-google-scholar')
+      );
+    } elseif (isset($_GET['sync_revoke']) && $_GET['sync_revoke'] === 'success') {
+      $messages[] = array(
+        'type' => 'updated',
+        'message' => __('✓ Sync credential revoked.', 'wp-google-scholar')
+      );
+    }
     // Only check for settings-updated if refresh/import are NOT set
     elseif (isset($_GET['settings-updated']) && $_GET['settings-updated'] === 'true') {
       $messages[] = array(
@@ -812,6 +824,9 @@ class Settings
     $bookmarklet_href = $update_method === 'browser'
       ? $this->build_bookmarklet_href($options['max_publications'] ?? 200)
       : '';
+    $sync_credentials = $update_method === 'browser'
+      ? $this->get_active_sync_credentials()
+      : array();
 
     include WP_SCHOLAR_PLUGIN_DIR . 'views/settings-page.php';
   }

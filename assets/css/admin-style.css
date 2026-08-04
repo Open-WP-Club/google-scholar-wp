@@ -400,6 +400,45 @@
   gap: 0.75rem;
 }
 
+.scholar-sync-divider {
+  margin: 20px 0;
+  border: none;
+  border-top: 1px solid #dcdcde;
+}
+
+.scholar-sync-credential-list {
+  margin: 10px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.scholar-sync-credential-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: #f6f7f7;
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+
+.scholar-sync-revoke-form {
+  margin: 0;
+}
+
+.scholar-sync-revoke-btn {
+  color: #d63638;
+  cursor: pointer;
+}
+
+.scholar-sync-warning {
+  color: #996800;
+  background: #fcf9e8;
+  border-left: 4px solid #dba617;
+  padding: 8px 12px;
+  margin: 12px 0;
+}
+
 /* Loading States */
 .scholar-refresh-loading {
   position: relative;

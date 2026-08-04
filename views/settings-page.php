@@ -307,6 +307,43 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
                       </button>
                     </div>
                   </form>
+
+                  <hr class="scholar-sync-divider">
+
+                  <h3><?php _e('Automated Sync (optional)', 'wp-google-scholar'); ?></h3>
+                  <p class="description">
+                    <?php _e("Skip the manual paste: download a ready-to-run script, add one line to your own computer's cron/launchd, and this profile stays in sync automatically - fetched from your machine's network, never the server.", 'wp-google-scholar'); ?>
+                  </p>
+
+                  <?php if (!empty($sync_credentials)): ?>
+                    <ul class="scholar-sync-credential-list">
+                      <?php foreach ($sync_credentials as $credential): ?>
+                        <li>
+                          <?php echo esc_html($credential['name']); ?>
+                          <form method="post" action="<?php echo admin_url('admin-post.php'); ?>" class="scholar-sync-revoke-form">
+                            <input type="hidden" name="action" value="revoke_scholar_sync_credential">
+                            <input type="hidden" name="uuid" value="<?php echo esc_attr($credential['uuid']); ?>">
+                            <?php wp_nonce_field('revoke_scholar_sync_credential', 'scholar_sync_revoke_nonce'); ?>
+                            <button type="submit" class="button-link scholar-sync-revoke-btn">
+                              <?php _e('Revoke', 'wp-google-scholar'); ?>
+                            </button>
+                          </form>
+                        </li>
+                      <?php endforeach; ?>
+                    </ul>
+                  <?php endif; ?>
+
+                  <p class="scholar-sync-warning">
+                    ⚠ <?php _e('The downloaded file contains a live credential - treat it like a password. Do not commit it to version control or share it. Downloading again issues a new credential and revokes the old one.', 'wp-google-scholar'); ?>
+                  </p>
+
+                  <form method="post" action="<?php echo admin_url('admin-post.php'); ?>">
+                    <input type="hidden" name="action" value="download_scholar_sync_script">
+                    <?php wp_nonce_field('download_scholar_sync_script', 'scholar_sync_download_nonce'); ?>
+                    <button type="submit" class="button button-secondary">
+                      ⬇ <?php _e('Download Sync Script', 'wp-google-scholar'); ?>
+                    </button>
+                  </form>
                 <?php endif; ?>
               </div>
             <?php else: ?>
