@@ -220,7 +220,7 @@ class SettingsTest extends TestCase
     public function test_constructor_registers_expected_hooks(): void
     {
         Functions\expect('add_action')
-            ->times(6);
+            ->times(8);
 
         Functions\expect('add_filter')
             ->once();
@@ -560,5 +560,50 @@ HTML;
         $this->assertArrayHasKey('data', $result);
         $this->assertNotNull($captured_status_message, 'Status message should have been captured');
         $this->assertStringContainsString('Imported via automated sync', $captured_status_message);
+    }
+
+    // ==========================================
+    // Automated sync: download script + Application Password lifecycle
+    // ==========================================
+
+    protected function setUpSyncCredentialStore(): void
+    {
+        \WP_Application_Passwords::$store = array();
+    }
+
+    public function test_get_active_sync_credentials_filters_to_sync_prefix(): void
+    {
+        $this->setUpSyncCredentialStore();
+        \WP_Application_Passwords::$store[1] = array(
+            'a' => array('uuid' => 'a', 'name' => 'Scholar Auto-Sync (2026-08-01)'),
+            'b' => array('uuid' => 'b', 'name' => 'Some Other App'),
+        );
+
+        Functions\when('get_current_user_id')->justReturn(1);
+
+        $settings = $this->createSettingsWithoutConstructor();
+        $result = $settings->get_active_sync_credentials();
+
+        $this->assertCount(1, $result);
+        $this->assertSame('a', $result[0]['uuid']);
+    }
+
+    public function test_revoke_sync_credentials_removes_only_sync_prefixed_entries(): void
+    {
+        $this->setUpSyncCredentialStore();
+        \WP_Application_Passwords::$store[7] = array(
+            'a' => array('uuid' => 'a', 'name' => 'Scholar Auto-Sync (2026-08-01)'),
+            'b' => array('uuid' => 'b', 'name' => 'Some Other App'),
+        );
+
+        $settings = $this->createSettingsWithoutConstructor();
+        $reflection = new \ReflectionClass($settings);
+        $method = $reflection->getMethod('revoke_sync_credentials');
+        $method->setAccessible(true);
+        $method->invoke($settings, 7);
+
+        $remaining = \WP_Application_Passwords::get_user_application_passwords(7);
+        $this->assertCount(1, $remaining);
+        $this->assertSame('b', $remaining[0]['uuid']);
     }
 }

@@ -138,3 +138,42 @@ if (!class_exists('WP_REST_Request')) {
         }
     }
 }
+
+/**
+ * Minimal WP_Application_Passwords stub for tests - an in-memory store
+ * standing in for WordPress core's Application Passwords API (5.6+).
+ * Tests reset WP_Application_Passwords::$store in setUp().
+ */
+if (!class_exists('WP_Application_Passwords')) {
+    class WP_Application_Passwords
+    {
+        public static $store = array();
+        private static $next_id = 1;
+
+        public static function create_new_application_password($user_id, $args = array())
+        {
+            $uuid = 'test-uuid-' . self::$next_id++;
+            $item = array(
+                'uuid' => $uuid,
+                'name' => $args['name'] ?? '',
+                'created' => time(),
+            );
+            self::$store[$user_id][$uuid] = $item;
+            return array('plaintext-password-' . $uuid, $item);
+        }
+
+        public static function get_user_application_passwords($user_id)
+        {
+            return array_values(self::$store[$user_id] ?? array());
+        }
+
+        public static function delete_application_password($user_id, $uuid)
+        {
+            if (!isset(self::$store[$user_id][$uuid])) {
+                return false;
+            }
+            unset(self::$store[$user_id][$uuid]);
+            return true;
+        }
+    }
+}

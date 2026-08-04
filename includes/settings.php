@@ -14,6 +14,7 @@ class Settings
   // Constants for validation and rate limiting
   public const REFRESH_COOLDOWN_SECONDS = 300; // 5 minutes
   private const IMPORT_REPLACE_COOLDOWN_SECONDS = 15;
+  private const SYNC_CREDENTIAL_PREFIX = 'Scholar Auto-Sync';
   private const MIN_PROFILE_ID_LENGTH = 8;
   private const MAX_PROFILE_ID_LENGTH = 20;
   public const DATA_STALE_AGE_DAYS = 90; // Public so Scheduler can access it
@@ -26,6 +27,8 @@ class Settings
     add_action('admin_post_refresh_scholar_profile', array($this, 'handle_manual_refresh'));
     add_action('admin_post_clear_stale_data', array($this, 'handle_clear_stale_data'));
     add_action('admin_post_import_scholar_profile', array($this, 'handle_import_scholar_profile'));
+    add_action('admin_post_download_scholar_sync_script', array($this, 'handle_download_sync_script'));
+    add_action('admin_post_revoke_scholar_sync_credential', array($this, 'handle_revoke_sync_credential'));
     add_filter(
       'plugin_action_links_' . plugin_basename(WP_SCHOLAR_PLUGIN_DIR . 'wp-google-scholar.php'),
       array($this, 'add_settings_link')
@@ -285,6 +288,124 @@ class Settings
       admin_url('options-general.php')
     ));
     exit;
+  }
+
+  /**
+   * Generate and stream a ready-to-run sync script for the automated
+   * browser-assisted sync flow: fetches Scholar pages from the admin's own
+   * machine (via cron) and POSTs them to RestApi::handle_import(), using a
+   * dedicated Application Password issued just for this purpose.
+   */
+  public function handle_download_sync_script()
+  {
+    if (!current_user_can('manage_options')) {
+      wp_die(__('You do not have sufficient permissions to access this page.'));
+    }
+
+    if (!isset($_POST['scholar_sync_download_nonce']) || !wp_verify_nonce($_POST['scholar_sync_download_nonce'], 'download_scholar_sync_script')) {
+      wp_die(__('Security check failed.'));
+    }
+
+    $options = get_option($this->option_name, array());
+    if (empty($options['profile_id'])) {
+      wp_safe_redirect(add_query_arg(
+        array('page' => $this->page_slug, 'sync_download' => 'failed'),
+        admin_url('options-general.php')
+      ));
+      exit;
+    }
+
+    $user_id = get_current_user_id();
+    $this->revoke_sync_credentials($user_id);
+
+    $password_result = \WP_Application_Passwords::create_new_application_password($user_id, array(
+      'name' => self::SYNC_CREDENTIAL_PREFIX . ' (' . wp_date('Y-m-d H:i') . ')'
+    ));
+
+    if (is_wp_error($password_result)) {
+      wp_die(esc_html($password_result->get_error_message()));
+    }
+
+    list($app_password, ) = $password_result;
+
+    $template_path = WP_SCHOLAR_PLUGIN_DIR . 'assets/tools/scholar-sync.sh.tpl';
+    $template = file_exists($template_path) ? file_get_contents($template_path) : false;
+
+    if ($template === false) {
+      wp_die(__('Sync script template is missing from this plugin install.', 'wp-google-scholar'));
+    }
+
+    $current_user = wp_get_current_user();
+    $script = str_replace(
+      array('__SITE_URL__', '__WP_USER__', '__APP_PASSWORD__', '__PROFILE_ID__', '__MAX_PUBLICATIONS__'),
+      array(
+        home_url(),
+        $current_user->user_login,
+        $app_password,
+        $options['profile_id'],
+        (string) intval($options['max_publications'] ?? 200)
+      ),
+      $template
+    );
+
+    nocache_headers();
+    header('Content-Type: text/x-sh; charset=utf-8');
+    header('Content-Disposition: attachment; filename="scholar-sync.sh"');
+    header('Content-Length: ' . strlen($script));
+    echo $script;
+    exit;
+  }
+
+  /**
+   * Revoke a single automated-sync Application Password from the settings
+   * page, without sending the admin to Users > Profile.
+   */
+  public function handle_revoke_sync_credential()
+  {
+    if (!current_user_can('manage_options')) {
+      wp_die(__('You do not have sufficient permissions to access this page.'));
+    }
+
+    if (!isset($_POST['scholar_sync_revoke_nonce']) || !wp_verify_nonce($_POST['scholar_sync_revoke_nonce'], 'revoke_scholar_sync_credential')) {
+      wp_die(__('Security check failed.'));
+    }
+
+    $uuid = isset($_POST['uuid']) ? sanitize_text_field($_POST['uuid']) : '';
+    if ($uuid !== '') {
+      \WP_Application_Passwords::delete_application_password(get_current_user_id(), $uuid);
+    }
+
+    wp_safe_redirect(add_query_arg(
+      array('page' => $this->page_slug, 'sync_revoke' => 'success'),
+      admin_url('options-general.php')
+    ));
+    exit;
+  }
+
+  /**
+   * Revoke every existing automated-sync Application Password for a user,
+   * so downloading a new script always leaves exactly one active credential.
+   */
+  private function revoke_sync_credentials(int $user_id): void
+  {
+    $existing = \WP_Application_Passwords::get_user_application_passwords($user_id);
+    foreach ($existing as $item) {
+      if (isset($item['name']) && strpos($item['name'], self::SYNC_CREDENTIAL_PREFIX) === 0) {
+        \WP_Application_Passwords::delete_application_password($user_id, $item['uuid']);
+      }
+    }
+  }
+
+  /**
+   * Active automated-sync Application Passwords for the current admin, for
+   * display (with per-credential Revoke buttons) in the Browser mode panel.
+   */
+  public function get_active_sync_credentials(): array
+  {
+    $existing = \WP_Application_Passwords::get_user_application_passwords(get_current_user_id());
+    return array_values(array_filter($existing, function ($item) {
+      return isset($item['name']) && strpos($item['name'], self::SYNC_CREDENTIAL_PREFIX) === 0;
+    }));
   }
 
   /**
