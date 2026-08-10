@@ -147,7 +147,11 @@ class SEO
     }
 
     echo '<script type="application/ld+json">' . "\n";
-    echo wp_json_encode($person_schema, JSON_UNESCAPED_SLASHES);
+    // Slashes deliberately left escaped (no JSON_UNESCAPED_SLASHES): scraped
+    // profile text ends up inside an inline <script> tag, and an unescaped
+    // "</script>" in that text would terminate the tag early in the HTML
+    // parser, before JS/JSON parsing ever sees it.
+    echo wp_json_encode($person_schema);
     echo "\n" . '</script>' . "\n";
 
     // Publications as ItemList (simplified)
@@ -161,7 +165,7 @@ class SEO
       );
 
       echo '<script type="application/ld+json">' . "\n";
-      echo wp_json_encode($itemlist_schema, JSON_UNESCAPED_SLASHES);
+      echo wp_json_encode($itemlist_schema);
       echo "\n" . '</script>' . "\n";
     }
   }

@@ -14,9 +14,20 @@ class Scraper
   private const HTTP_TIMEOUT_SECONDS = 30;
   private const IMAGE_CACHE_DURATION = 86400; // 24 hours
 
+  // Google truncates the compact author line on the profile/publications
+  // table with this character once it doesn't fit - the full list only
+  // exists on the publication's own citation page.
+  private const AUTHOR_TRUNCATION_MARKER = '…';
+  // Expanding a truncated author list costs one extra request per
+  // publication. Capped per call so a large backlog trickles in over
+  // several scrape runs instead of hammering Scholar all at once.
+  private const AUTHOR_EXPANSION_BUDGET = 15;
+
   private $max_publications = self::DEFAULT_MAX_PUBLICATIONS;
   private $page_size = self::DEFAULT_PAGE_SIZE;
   private $request_delay = self::DEFAULT_REQUEST_DELAY;
+  private $expand_authors = false;
+  private $previous_publications = array();
   private $last_error_details = null; // Store detailed error information
 
   /**
@@ -329,6 +340,15 @@ class Scraper
       return null;
     }
 
+    // Avatar URLs reach here from browser-pasted HTML and the sync REST
+    // endpoint, not just the server-side scrape - restrict the server-side
+    // fetch to Google's own image hosts so this can't be used as an SSRF
+    // probe against internal/arbitrary hosts.
+    if (!$this->is_allowed_avatar_host($image_url)) {
+      wp_scholar_log("Rejected avatar URL from disallowed host: $image_url");
+      return null;
+    }
+
     // Handle Google Scholar specific avatar URLs
     $processed_url = $this->process_google_scholar_avatar_url($image_url);
 
@@ -357,6 +377,25 @@ class Scraper
       'name' => $filename,
       'tmp_name' => $temp_file
     );
+  }
+
+  /**
+   * Whether a URL's host is one Google actually serves Scholar avatars from.
+   */
+  private function is_allowed_avatar_host(string $url): bool
+  {
+    $host = strtolower((string) parse_url($url, PHP_URL_HOST));
+    if ($host === '') {
+      return false;
+    }
+
+    foreach (['googleusercontent.com', 'ggpht.com', 'google.com'] as $allowed) {
+      if ($host === $allowed || substr($host, -(strlen($allowed) + 1)) === '.' . $allowed) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -488,6 +527,11 @@ class Scraper
 
       // Then get all publications across multiple pages
       $all_publications = $this->scrape_all_publications($profile_id);
+
+      if ($this->expand_authors) {
+        $all_publications = $this->expand_truncated_authors($all_publications, $this->previous_publications);
+      }
+
       $main_data['publications'] = $all_publications;
 
       wp_scholar_log(sprintf("Successfully scraped profile %s with %d publications", $profile_id, count($all_publications)));
@@ -1252,14 +1296,16 @@ class Scraper
     return array(
       'max_publications' => $this->max_publications,
       'page_size' => $this->page_size,
-      'request_delay' => $this->request_delay
+      'request_delay' => $this->request_delay,
+      'expand_authors' => $this->expand_authors
     );
   }
 
   /**
    * Set scraper configuration
    *
-   * @param array $config Configuration array with optional keys: max_publications, page_size, request_delay
+   * @param array $config Configuration array with optional keys: max_publications, page_size,
+   *                       request_delay, expand_authors, previous_publications
    * @return void
    */
   public function set_config(array $config): void
@@ -1274,6 +1320,148 @@ class Scraper
     if (isset($config['request_delay'])) {
       $this->request_delay = max(0.5, min(5, floatval($config['request_delay'])));
     }
+    if (isset($config['expand_authors'])) {
+      $this->expand_authors = (bool) $config['expand_authors'];
+    }
+    if (isset($config['previous_publications']) && is_array($config['previous_publications'])) {
+      $this->previous_publications = $config['previous_publications'];
+    }
+  }
+
+  /**
+   * Whether a compact author line was truncated by Google Scholar (it cuts
+   * the line off with an ellipsis once the full list doesn't fit).
+   */
+  private function is_truncated_authors(string $authors): bool
+  {
+    $authors = rtrim($authors);
+    if ($authors === '') {
+      return false;
+    }
+
+    // AUTHOR_TRUNCATION_MARKER is a multi-byte UTF-8 character - substr()
+    // is byte-based, so compare against its full byte length, not 1 char.
+    $marker_bytes = strlen(self::AUTHOR_TRUNCATION_MARKER);
+    return substr($authors, -$marker_bytes) === self::AUTHOR_TRUNCATION_MARKER || substr($authors, -3) === '...';
+  }
+
+  /**
+   * Fetch the full author list from a publication's own citation page
+   * (.../citations?view_op=view_citation&...) - the only place Scholar
+   * exposes it once the compact table line has been truncated.
+   *
+   * @return string|null Full author list, or null on any failure (network, HTTP, missing field)
+   */
+  private function fetch_full_authors(string $citation_url): ?string
+  {
+    if ($citation_url === '') {
+      return null;
+    }
+
+    $response = wp_remote_get($citation_url, array(
+      'timeout' => self::HTTP_TIMEOUT_SECONDS,
+      'headers' => array(
+        'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36'
+      )
+    ));
+
+    if (is_wp_error($response)) {
+      wp_scholar_log('Author expansion request failed - ' . $response->get_error_message(), 'warning');
+      return null;
+    }
+
+    if (wp_remote_retrieve_response_code($response) !== 200) {
+      wp_scholar_log('Author expansion request returned HTTP ' . wp_remote_retrieve_response_code($response), 'warning');
+      return null;
+    }
+
+    $html = wp_remote_retrieve_body($response);
+    if (empty($html)) {
+      return null;
+    }
+
+    $doc = new \DOMDocument();
+    libxml_use_internal_errors(true);
+    $doc->loadHTML($html);
+    libxml_clear_errors();
+    $xpath = new \DOMXPath($doc);
+
+    $value_node = $xpath->query(
+      "//div[@class='gsc_oci_field' and normalize-space(text())='Authors']/following-sibling::div[@class='gsc_oci_value'][1]"
+    )->item(0);
+
+    if (!$value_node) {
+      wp_scholar_log("Author expansion: no Authors field found on $citation_url", 'warning');
+      return null;
+    }
+
+    $authors = trim($value_node->textContent);
+    return $authors !== '' ? $authors : null;
+  }
+
+  /**
+   * Fill in full author lists for publications whose compact author line
+   * was truncated by Scholar, at the cost of one extra request per
+   * publication. Already-resolved publications (this run or a previous
+   * one, matched via $previous_publications) are never re-fetched - a
+   * publication is only ever expanded once, permanently.
+   *
+   * @param array $publications Freshly parsed publications to fill in
+   * @param array $previous_publications Previously stored publications, used to carry
+   *                                      forward already-resolved author lists across a
+   *                                      full re-scrape/re-import (which rebuilds the
+   *                                      array from scratch and would otherwise lose them)
+   * @return array $publications with 'authors'/'authors_full' updated where resolved
+   */
+  public function expand_truncated_authors(array $publications, array $previous_publications = array()): array
+  {
+    $resolved = array();
+    foreach ($previous_publications as $pub) {
+      if (!empty($pub['authors_full'])) {
+        $key = $pub['google_scholar_url'] ?? $pub['title'] ?? '';
+        if ($key !== '') {
+          $resolved[$key] = $pub['authors'] ?? '';
+        }
+      }
+    }
+
+    $budget = self::AUTHOR_EXPANSION_BUDGET;
+
+    foreach ($publications as &$pub) {
+      if (!empty($pub['authors_full'])) {
+        continue; // Already resolved on this very object (e.g. carried through a merge).
+      }
+
+      $key = $pub['google_scholar_url'] ?? $pub['title'] ?? '';
+
+      if (isset($resolved[$key])) {
+        $pub['authors'] = $resolved[$key];
+        $pub['authors_full'] = true;
+        continue;
+      }
+
+      if (!$this->is_truncated_authors($pub['authors'] ?? '')) {
+        $pub['authors_full'] = true; // Complete already - nothing to fetch, never revisit.
+        continue;
+      }
+
+      if ($budget <= 0) {
+        continue; // Leave truncated; picked up again on a future run.
+      }
+
+      $full_authors = $this->fetch_full_authors($pub['google_scholar_url'] ?? '');
+      $budget--;
+
+      if ($full_authors !== null) {
+        $pub['authors'] = $full_authors;
+        $pub['authors_full'] = true;
+      }
+
+      sleep($this->request_delay);
+    }
+    unset($pub);
+
+    return $publications;
   }
 
   /**
