@@ -4,10 +4,10 @@
  * Plugin Name: Google Scholar Profile Display
  * Plugin URI: https://openwpclub.com/
  * Description: Displays Google Scholar profile information using shortcode [scholar_profile]
- * Version: 1.5.2
+ * Version: 1.6.0
  * Author: OpenWPClub.com
  * Author URI: https://openwpclub.com/
- * License: GPL v2 or later
+ * Licensse: GPL v2 or later
  * Text Domain: wp-google-scholar
  * Domain Path: /languages
  * Requires at least: 5.0
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('WP_SCHOLAR_VERSION', '1.5.2');
+define('WP_SCHOLAR_VERSION', '1.6.0');
 define('WP_SCHOLAR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('WP_SCHOLAR_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('WP_SCHOLAR_MAX_CONSECUTIVE_FAILURES', 5);

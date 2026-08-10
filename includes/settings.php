@@ -29,6 +29,7 @@ class Settings
     add_action('admin_post_import_scholar_profile', array($this, 'handle_import_scholar_profile'));
     add_action('admin_post_download_scholar_sync_script', array($this, 'handle_download_sync_script'));
     add_action('admin_post_revoke_scholar_sync_credential', array($this, 'handle_revoke_sync_credential'));
+    add_action('wp_dashboard_setup', array($this, 'register_dashboard_widget'));
     add_filter(
       'plugin_action_links_' . plugin_basename(WP_SCHOLAR_PLUGIN_DIR . 'wp-google-scholar.php'),
       array($this, 'add_settings_link')
@@ -741,6 +742,97 @@ class Settings
     }
 
     return $existing;
+  }
+
+  /**
+   * Register the "Google Scholar Profile" dashboard widget. Dashboard
+   * widgets are otherwise visible to every user with dashboard access
+   * (subscribers included), so the capability check happens here rather
+   * than relying on wp_add_dashboard_widget() to gate it.
+   */
+  public function register_dashboard_widget(): void
+  {
+    if (!current_user_can('manage_options')) {
+      return;
+    }
+
+    wp_add_dashboard_widget(
+      'scholar_profile_dashboard_widget',
+      __('Google Scholar Profile', 'wp-google-scholar'),
+      array($this, 'render_dashboard_widget')
+    );
+  }
+
+  /**
+   * Render the dashboard widget: a compact status card mirroring the
+   * settings page's own status card, plus a link to full settings.
+   */
+  public function render_dashboard_widget(): void
+  {
+    $options = get_option($this->option_name, array());
+    $profile_data = get_option('scholar_profile_data');
+    $has_profile_data = !empty($profile_data) && !empty($profile_data['name']);
+    $settings_url = admin_url('options-general.php?page=' . $this->page_slug);
+
+    if (empty($options['profile_id'])) {
+      echo '<p>' . esc_html__('Not configured yet.', 'wp-google-scholar') . ' <a href="' . esc_url($settings_url) . '">' . esc_html__('Set up your profile', 'wp-google-scholar') . '</a></p>';
+      return;
+    }
+
+    if (!$has_profile_data) {
+      echo '<p>' . esc_html__('Profile ID is set, but no data has been fetched yet.', 'wp-google-scholar') . ' <a href="' . esc_url($settings_url) . '">' . esc_html__('Go fetch it', 'wp-google-scholar') . '</a></p>';
+      return;
+    }
+
+    $scheduler = new Scheduler();
+    $data_status = $scheduler->get_data_status();
+    $is_data_stale = $scheduler->is_data_stale();
+    $last_update = get_option('scholar_profile_last_update', 0);
+
+    echo '<div style="display:flex;gap:12px;align-items:flex-start;">';
+
+    if (!empty($profile_data['avatar'])) {
+      echo '<img src="' . esc_url($profile_data['avatar']) . '" alt="' . esc_attr($profile_data['name']) . '" width="48" height="48" style="border-radius:50%;flex-shrink:0;" onerror="this.style.display=\'none\'">';
+    }
+
+    echo '<div style="flex:1;min-width:0;">';
+    echo '<strong>' . esc_html($profile_data['name']) . '</strong>';
+    if (!empty($profile_data['affiliation'])) {
+      echo '<br><span style="color:#646970;">' . esc_html($profile_data['affiliation']) . '</span>';
+    }
+    echo '</div></div>';
+
+    echo '<table class="widefat" style="margin-top:12px;">
+      <tbody>
+        <tr>
+          <td>' . esc_html__('Citations', 'wp-google-scholar') . '</td>
+          <td>' . esc_html(number_format($profile_data['citations']['total'] ?? 0)) . '</td>
+        </tr>
+        <tr>
+          <td>h-index</td>
+          <td>' . esc_html($profile_data['citations']['h_index'] ?? 0) . '</td>
+        </tr>
+        <tr>
+          <td>' . esc_html__('Publications', 'wp-google-scholar') . '</td>
+          <td>' . esc_html(count($profile_data['publications'] ?? array())) . '</td>
+        </tr>
+      </tbody>
+    </table>';
+
+    echo '<p style="margin-top:10px;">';
+    if ($last_update) {
+      printf(
+        /* translators: %s: human-readable time difference, e.g. "3 days" */
+        esc_html__('Last updated %s ago.', 'wp-google-scholar'),
+        esc_html(human_time_diff($last_update, current_time('timestamp')))
+      );
+    }
+    if ($is_data_stale) {
+      echo ' <span style="color:#d63638;">⚠ ' . esc_html($data_status['status'] === 'error' ? __('Update failing.', 'wp-google-scholar') : __('May be outdated.', 'wp-google-scholar')) . '</span>';
+    }
+    echo '</p>';
+
+    echo '<p><a href="' . esc_url($settings_url) . '">' . esc_html__('View full settings →', 'wp-google-scholar') . '</a></p>';
   }
 
   public function render_settings_page()

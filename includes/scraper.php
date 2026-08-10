@@ -104,11 +104,20 @@ class Scraper
       }
     }
 
-    // Check if we've downloaded this exact URL recently (within last 24 hours)
+    // Check if we've downloaded this exact URL recently (within last 24 hours).
+    // Verify the file is still actually there first - the attachment can
+    // disappear out-of-band (deleted from the Media Library, uploads not
+    // carried over by a DB restore/migration, etc.) well within the 24h
+    // window, and trusting the transient blindly would keep "succeeding"
+    // with a URL that 404s.
     $recent_download = get_transient('scholar_image_download_' . $url_hash);
     if ($recent_download) {
-      wp_scholar_log("Using recent cached avatar for hash: $url_hash");
-      return $recent_download;
+      if ($this->verify_image_exists($recent_download)) {
+        wp_scholar_log("Using recent cached avatar for hash: $url_hash");
+        return $recent_download;
+      }
+      delete_transient('scholar_image_download_' . $url_hash);
+      wp_scholar_log("Recently cached avatar is missing on disk - re-downloading for hash: $url_hash");
     }
 
     wp_scholar_log("Downloading new avatar for hash: $url_hash from: $image_url");

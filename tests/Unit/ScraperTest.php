@@ -595,6 +595,35 @@ class ScraperTest extends TestCase
         $this->assertSame('John Researcher', $result['name']);
     }
 
+    public function test_avatar_download_ignores_stale_transient_when_file_missing(): void
+    {
+        // Regression test: an avatar transient can outlive the attachment it
+        // points to (deleted from the Media Library, uploads not carried
+        // over by a DB restore, etc.). The cached URL must be verified
+        // before being trusted, exactly like the attachment-based cache
+        // check just above it in download_to_media_library().
+        $scraper = new Scraper();
+        $html = file_get_contents($this->fixturesDir . 'scholar-profile-main.html');
+
+        Functions\when('get_posts')->justReturn([]);
+        Functions\when('home_url')->justReturn('http://example.test');
+        Functions\when('wp_upload_dir')->justReturn([
+            'baseurl' => 'http://example.test/wp-content/uploads',
+            'basedir' => '/tmp/wp-scholar-test-nonexistent-uploads',
+        ]);
+        Functions\when('get_transient')->justReturn('http://example.test/wp-content/uploads/2026/08/scholar-missing.jpg');
+        Functions\expect('delete_transient')->once();
+        Functions\when('download_url')->justReturn(new \WP_Error('test', 'mocked'));
+        Functions\when('wp_remote_get')->justReturn(new \WP_Error('test', 'mocked'));
+        Functions\when('set_transient')->justReturn(true);
+
+        $result = $scraper->import_main_profile_html($html, 'test123ABC');
+
+        // The dead cached URL must not be returned as-is - a real (here,
+        // failing) download attempt should have been made instead.
+        $this->assertSame('', $result['avatar']);
+    }
+
     public function test_import_main_profile_html_skips_coauthor_avatar_downloads(): void
     {
         $scraper = new Scraper();

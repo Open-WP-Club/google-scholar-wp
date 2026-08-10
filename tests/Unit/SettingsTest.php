@@ -236,7 +236,7 @@ class SettingsTest extends TestCase
     public function test_constructor_registers_expected_hooks(): void
     {
         Functions\expect('add_action')
-            ->times(8);
+            ->times(9);
 
         Functions\expect('add_filter')
             ->once();
@@ -554,6 +554,79 @@ HTML;
 
         $this->assertArrayHasKey('error', $result);
         $this->assertSame('unrecognized_content', $result['error']['type']);
+    }
+
+    // --- Dashboard widget ---
+
+    private function stubDashboardWidgetEnvironment(array $options, array $profileData = array()): void
+    {
+        Functions\when('add_action')->justReturn(true);
+        Functions\when('add_filter')->justReturn(true);
+        Functions\when('esc_html')->returnArg();
+        Functions\when('esc_attr')->returnArg();
+        Functions\when('esc_url')->returnArg();
+        Functions\when('esc_html__')->returnArg();
+        Functions\when('__')->returnArg();
+        Functions\when('admin_url')->justReturn('http://example.test/wp-admin/options-general.php?page=scholar-profile-settings');
+        Functions\when('human_time_diff')->justReturn('2 days');
+        Functions\when('current_time')->justReturn(time());
+
+        Functions\when('get_option')->alias(function ($name, $default = false) use ($options, $profileData) {
+            if ($name === 'scholar_profile_settings') {
+                return $options;
+            }
+            if ($name === 'scholar_profile_data') {
+                return $profileData;
+            }
+            return $default;
+        });
+    }
+
+    public function test_dashboard_widget_prompts_setup_when_no_profile_id(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $this->stubDashboardWidgetEnvironment(array('profile_id' => ''));
+
+        ob_start();
+        $settings->render_dashboard_widget();
+        $output = ob_get_clean();
+
+        $this->assertStringContainsString('Not configured yet', $output);
+    }
+
+    public function test_dashboard_widget_prompts_fetch_when_profile_id_set_but_no_data(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $this->stubDashboardWidgetEnvironment(array('profile_id' => 'test123ABC'));
+
+        ob_start();
+        $settings->render_dashboard_widget();
+        $output = ob_get_clean();
+
+        $this->assertStringContainsString('no data has been fetched yet', $output);
+    }
+
+    public function test_dashboard_widget_shows_status_card_when_data_present(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $this->stubDashboardWidgetEnvironment(
+            array('profile_id' => 'test123ABC'),
+            array(
+                'name' => 'Jane Researcher',
+                'affiliation' => 'Example University',
+                'avatar' => '',
+                'citations' => array('total' => 500, 'h_index' => 12),
+                'publications' => array(['title' => 'Paper One'], ['title' => 'Paper Two']),
+            )
+        );
+
+        ob_start();
+        $settings->render_dashboard_widget();
+        $output = ob_get_clean();
+
+        $this->assertStringContainsString('Jane Researcher', $output);
+        $this->assertStringContainsString('500', $output);
+        $this->assertStringContainsString('View full settings', $output);
     }
 
     public function test_process_import_uses_sync_status_message_when_source_is_sync(): void
