@@ -7,7 +7,7 @@
  * Version: 1.6.0
  * Author: OpenWPClub.com
  * Author URI: https://openwpclub.com/
- * Licensse: GPL v2 or later
+ * License: GPL v2 or later
  * Text Domain: wp-google-scholar
  * Domain Path: /languages
  * Requires at least: 5.0
