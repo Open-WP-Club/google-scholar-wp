@@ -107,6 +107,19 @@ class ScraperTest extends TestCase
         $this->assertSame(200, $config['max_publications']);
     }
 
+    public function test_set_config_expand_authors_defaults_false(): void
+    {
+        $scraper = new Scraper();
+        $this->assertFalse($scraper->get_config()['expand_authors']);
+    }
+
+    public function test_set_config_expand_authors_enables(): void
+    {
+        $scraper = new Scraper();
+        $scraper->set_config(['expand_authors' => true]);
+        $this->assertTrue($scraper->get_config()['expand_authors']);
+    }
+
     // ==========================================
     // validate_scraped_data
     // ==========================================
@@ -815,5 +828,180 @@ class ScraperTest extends TestCase
         $result = $scraper->import_from_bookmarklet_json($json, 'test123ABC');
 
         $this->assertIsArray($result);
+    }
+
+    // ==========================================
+    // is_truncated_authors (private)
+    // ==========================================
+
+    public function test_is_truncated_authors_detects_ellipsis(): void
+    {
+        $scraper = new Scraper();
+        $result = $this->invokeMethod($scraper, 'is_truncated_authors', ['A Vaswani, N Shazeer…']);
+        $this->assertTrue($result);
+    }
+
+    public function test_is_truncated_authors_detects_three_dots(): void
+    {
+        $scraper = new Scraper();
+        $result = $this->invokeMethod($scraper, 'is_truncated_authors', ['A Vaswani, N Shazeer...']);
+        $this->assertTrue($result);
+    }
+
+    public function test_is_truncated_authors_false_for_complete_list(): void
+    {
+        $scraper = new Scraper();
+        $result = $this->invokeMethod($scraper, 'is_truncated_authors', ['A Vaswani, N Shazeer']);
+        $this->assertFalse($result);
+    }
+
+    public function test_is_truncated_authors_false_for_empty_string(): void
+    {
+        $scraper = new Scraper();
+        $result = $this->invokeMethod($scraper, 'is_truncated_authors', ['']);
+        $this->assertFalse($result);
+    }
+
+    // ==========================================
+    // fetch_full_authors (private)
+    // ==========================================
+
+    public function test_fetch_full_authors_parses_fixture(): void
+    {
+        $scraper = new Scraper();
+        $html = file_get_contents($this->fixturesDir . 'scholar-citation-detail.html');
+
+        Functions\when('wp_remote_get')->justReturn(['response' => ['code' => 200], 'body' => $html]);
+        Functions\when('wp_remote_retrieve_response_code')->justReturn(200);
+        Functions\when('wp_remote_retrieve_body')->justReturn($html);
+
+        $result = $this->invokeMethod($scraper, 'fetch_full_authors', ['https://scholar.google.com/citations?view_op=view_citation']);
+
+        $this->assertSame(
+            'A Vaswani, N Shazeer, N Parmar, J Uszkoreit, L Jones, AN Gomez, Ł Kaiser, I Polosukhin, and 4 more',
+            $result
+        );
+    }
+
+    public function test_fetch_full_authors_returns_null_on_wp_error(): void
+    {
+        $scraper = new Scraper();
+        Functions\when('wp_remote_get')->justReturn(new \WP_Error('test', 'mocked'));
+
+        $result = $this->invokeMethod($scraper, 'fetch_full_authors', ['https://scholar.google.com/citations?view_op=view_citation']);
+        $this->assertNull($result);
+    }
+
+    public function test_fetch_full_authors_returns_null_on_non_200(): void
+    {
+        $scraper = new Scraper();
+        Functions\when('wp_remote_get')->justReturn(['response' => ['code' => 429], 'body' => '']);
+        Functions\when('wp_remote_retrieve_response_code')->justReturn(429);
+
+        $result = $this->invokeMethod($scraper, 'fetch_full_authors', ['https://scholar.google.com/citations?view_op=view_citation']);
+        $this->assertNull($result);
+    }
+
+    public function test_fetch_full_authors_returns_null_for_empty_url(): void
+    {
+        $scraper = new Scraper();
+        Functions\expect('wp_remote_get')->never();
+
+        $result = $this->invokeMethod($scraper, 'fetch_full_authors', ['']);
+        $this->assertNull($result);
+    }
+
+    // ==========================================
+    // expand_truncated_authors
+    // ==========================================
+
+    public function test_expand_truncated_authors_skips_already_resolved_on_object(): void
+    {
+        $scraper = new Scraper();
+        Functions\expect('wp_remote_get')->never();
+
+        $publications = [
+            ['google_scholar_url' => 'https://scholar.google.com/a', 'authors' => 'Full list already here', 'authors_full' => true],
+        ];
+
+        $result = $scraper->expand_truncated_authors($publications);
+        $this->assertSame('Full list already here', $result[0]['authors']);
+    }
+
+    public function test_expand_truncated_authors_carries_forward_from_previous_run(): void
+    {
+        $scraper = new Scraper();
+        Functions\expect('wp_remote_get')->never();
+
+        $publications = [
+            ['google_scholar_url' => 'https://scholar.google.com/a', 'authors' => 'A, B…'],
+        ];
+        $previous = [
+            ['google_scholar_url' => 'https://scholar.google.com/a', 'authors' => 'A, B, C, D', 'authors_full' => true],
+        ];
+
+        $result = $scraper->expand_truncated_authors($publications, $previous);
+        $this->assertSame('A, B, C, D', $result[0]['authors']);
+        $this->assertTrue($result[0]['authors_full']);
+    }
+
+    public function test_expand_truncated_authors_marks_complete_without_fetch_when_not_truncated(): void
+    {
+        $scraper = new Scraper();
+        Functions\expect('wp_remote_get')->never();
+
+        $publications = [
+            ['google_scholar_url' => 'https://scholar.google.com/a', 'authors' => 'A, B, C'],
+        ];
+
+        $result = $scraper->expand_truncated_authors($publications);
+        $this->assertTrue($result[0]['authors_full']);
+        $this->assertSame('A, B, C', $result[0]['authors']);
+    }
+
+    public function test_expand_truncated_authors_fetches_when_truncated_and_uncached(): void
+    {
+        $scraper = new Scraper();
+        $html = file_get_contents($this->fixturesDir . 'scholar-citation-detail.html');
+
+        Functions\expect('wp_remote_get')->once()->andReturn(['response' => ['code' => 200], 'body' => $html]);
+        Functions\when('wp_remote_retrieve_response_code')->justReturn(200);
+        Functions\when('wp_remote_retrieve_body')->justReturn($html);
+        Functions\when('sleep')->justReturn(0);
+
+        $publications = [
+            ['google_scholar_url' => 'https://scholar.google.com/a', 'authors' => 'A Vaswani, N Shazeer…'],
+        ];
+
+        $result = $scraper->expand_truncated_authors($publications);
+        $this->assertTrue($result[0]['authors_full']);
+        $this->assertStringContainsString('I Polosukhin', $result[0]['authors']);
+    }
+
+    public function test_expand_truncated_authors_respects_budget(): void
+    {
+        $scraper = new Scraper();
+        $html = file_get_contents($this->fixturesDir . 'scholar-citation-detail.html');
+
+        // One more truncated publication than the budget allows.
+        $publications = [];
+        for ($i = 0; $i < 16; $i++) {
+            $publications[] = ['google_scholar_url' => "https://scholar.google.com/$i", 'authors' => 'A, B…'];
+        }
+
+        // Exactly 15 (the budget) - a 16th call would fail Mockery's count
+        // verification, proving the budget is enforced rather than merely
+        // leaving unresolved fetches unmarked.
+        Functions\expect('wp_remote_get')->times(15)->andReturn(['response' => ['code' => 200], 'body' => $html]);
+        Functions\when('wp_remote_retrieve_response_code')->justReturn(200);
+        Functions\when('wp_remote_retrieve_body')->justReturn($html);
+        Functions\when('sleep')->justReturn(0);
+
+        $result = $scraper->expand_truncated_authors($publications);
+
+        $resolved = array_filter($result, function ($pub) {
+            return !empty($pub['authors_full']);
+        });
+        $this->assertCount(15, $resolved);
     }
 }

@@ -193,8 +193,11 @@ class Settings
     $scraper = new Scraper();
 
     // Configure scraper limits based on settings
+    $previous_data = get_option('scholar_profile_data', array());
     $scraper_config = array(
-      'max_publications' => isset($options['max_publications']) ? intval($options['max_publications']) : 200
+      'max_publications' => isset($options['max_publications']) ? intval($options['max_publications']) : 200,
+      'expand_authors' => ($options['expand_authors'] ?? '0') === '1',
+      'previous_publications' => is_array($previous_data['publications'] ?? null) ? $previous_data['publications'] : array()
     );
     $scraper->set_config($scraper_config);
 
@@ -506,7 +509,8 @@ class Settings
       is_array($existing_data) ? $existing_data : array(),
       $options['profile_id'] ?? '',
       $import_mode,
-      intval($options['max_publications'] ?? 200)
+      intval($options['max_publications'] ?? 200),
+      ($options['expand_authors'] ?? '0') === '1'
     );
 
     if (isset($result['error'])) {
@@ -560,9 +564,14 @@ class Settings
    * @param string $profile_id The configured Google Scholar profile ID
    * @param string $import_mode Whether this replaces profile data or appends a later page
    * @param int $max_publications Maximum number of publications to retain
+   * @param bool $expand_authors Fetch full author lists for truncated publications. Runs
+   *                              server-side here (unlike the bookmarklet, which can do this
+   *                              from the browser instead) - on a host whose IP is blocked by
+   *                              Scholar, expansion will simply fail to resolve and the
+   *                              publication stays truncated until a working path picks it up.
    * @return array Either ['data' => array] on success or ['error' => array] on failure
    */
-  public function build_import_data(string $content, array $existing_data, string $profile_id, string $import_mode = 'replace', int $max_publications = 200): array
+  public function build_import_data(string $content, array $existing_data, string $profile_id, string $import_mode = 'replace', int $max_publications = 200, bool $expand_authors = false): array
   {
     $content = trim($content);
 
@@ -597,13 +606,18 @@ class Settings
         return array('error' => $scraper->get_last_error_details());
       }
       $data['publications'] = array_slice($data['publications'], 0, $max_publications);
+      if ($expand_authors) {
+        // Carries forward anything already resolved (server-side previously,
+        // or by the bookmarklet itself just now) and only fetches the rest.
+        $data['publications'] = $scraper->expand_truncated_authors($data['publications'], $existing_data['publications'] ?? array());
+      }
       return array('data' => $data);
     }
 
     // Subsequent Scholar pages also contain gsc_prf. The explicit append
     // action prevents a cstart=N page from replacing stored publications.
     if ($import_mode === 'append' && strpos($content, 'gsc_a_tr') !== false) {
-      return $this->append_imported_publications($scraper, $content, $existing_data, $profile_id, $max_publications);
+      return $this->append_imported_publications($scraper, $content, $existing_data, $profile_id, $max_publications, $expand_authors);
     }
 
     // A full profile page replaces profile information and publications.
@@ -615,6 +629,9 @@ class Settings
         return array('error' => $scraper->get_last_error_details());
       }
       $data['publications'] = array_slice($data['publications'], 0, $max_publications);
+      if ($expand_authors) {
+        $data['publications'] = $scraper->expand_truncated_authors($data['publications'], $existing_data['publications'] ?? array());
+      }
       return array('data' => $data);
     }
 
@@ -635,7 +652,7 @@ class Settings
    * Add publications from a later Scholar page without changing stored
    * profile details. Complete pages and table-only fragments are both valid.
    */
-  private function append_imported_publications(Scraper $scraper, string $content, array $existing_data, string $profile_id, int $max_publications): array
+  private function append_imported_publications(Scraper $scraper, string $content, array $existing_data, string $profile_id, int $max_publications, bool $expand_authors = false): array
   {
     $new_publications = $scraper->import_publications_fragment_html($content);
 
@@ -674,6 +691,11 @@ class Settings
       0,
       $max_publications
     );
+    if ($expand_authors) {
+      // Merged-in existing publications already carry authors_full from
+      // before, so only the newly-appended ones actually get fetched.
+      $data['publications'] = $scraper->expand_truncated_authors($data['publications']);
+    }
     return array('data' => $data);
   }
 
@@ -823,7 +845,7 @@ class Settings
 
     $update_method = $options['update_method'] ?? 'server';
     $bookmarklet_href = $update_method === 'browser'
-      ? $this->build_bookmarklet_href($options['max_publications'] ?? 200)
+      ? $this->build_bookmarklet_href($options['max_publications'] ?? 200, ($options['expand_authors'] ?? '0') === '1')
       : '';
     $sync_credentials = $update_method === 'browser'
       ? $this->get_active_sync_credentials()
@@ -868,9 +890,9 @@ class Settings
 
   /**
    * Build the "javascript:" bookmarklet link from the bundled JS asset,
-   * with the configured max publications baked in.
+   * with the configured max publications and author-expansion flag baked in.
    */
-  private function build_bookmarklet_href($max_publications): string
+  private function build_bookmarklet_href($max_publications, bool $expand_authors = false): string
   {
     // Bookmark managers may truncate long javascript: URLs. Use the bundled
     // minified asset so the encoded bookmarklet remains safely below that
@@ -890,6 +912,7 @@ class Settings
     $js = preg_replace('#^/\*\*.*?\*/\s*#s', '', $js, 1);
     $js = preg_replace('/\n\s*\n/', "\n", $js);
     $js = str_replace('__MAX_PUBLICATIONS__', (string) intval($max_publications), $js);
+    $js = str_replace('__EXPAND_AUTHORS__', $expand_authors ? 'true' : 'false', $js);
 
     return 'javascript:' . rawurlencode($js);
   }
@@ -1011,6 +1034,10 @@ class Settings
     if (!in_array($sanitized['update_method'], array('server', 'browser'))) {
       $sanitized['update_method'] = 'server';
     }
+
+    // Expand truncated author lists (costs one extra Scholar request per
+    // truncated publication - see the settings page for the full tradeoff).
+    $sanitized['expand_authors'] = isset($input['expand_authors']) ? '1' : '0';
 
     return $sanitized;
   }

@@ -9,13 +9,19 @@
  * site directly - it only reads scholar.google.com and writes to the
  * clipboard.
  *
- * __MAX_PUBLICATIONS__ is replaced with the plugin's configured
- * "Max Publications" setting when this file is turned into the
- * javascript: bookmarklet link on the settings page.
+ * __MAX_PUBLICATIONS__ and __EXPAND_AUTHORS__ are replaced with the
+ * plugin's configured "Max Publications" and "Full Author Lists" settings
+ * when this file is turned into the javascript: bookmarklet link on the
+ * settings page.
  */
 (function () {
   var MAX_PUBLICATIONS = __MAX_PUBLICATIONS__;
+  var EXPAND_AUTHORS = __EXPAND_AUTHORS__;
   var PAGE_SIZE = 20;
+  // Mirrors Scraper::AUTHOR_EXPANSION_BUDGET (includes/scraper.php) - a
+  // large backlog of truncated publications trickles in over several runs
+  // instead of firing dozens of extra requests from a single click.
+  var AUTHOR_EXPANSION_BUDGET = 15;
 
   function notify(message, isError) {
     var el = document.getElementById('wp-scholar-bookmarklet-notice');
@@ -147,6 +153,69 @@
       });
   }
 
+  function isTruncatedAuthors(authors) {
+    var trimmed = (authors || '').replace(/\s+$/, '');
+    return trimmed.slice(-1) === '…' || trimmed.slice(-3) === '...';
+  }
+
+  function fetchFullAuthors(citationUrl) {
+    if (!citationUrl) {
+      return Promise.resolve(null);
+    }
+
+    return fetch(citationUrl, { credentials: 'same-origin' })
+      .then(function (res) {
+        return res.ok ? res.text() : null;
+      })
+      .then(function (html) {
+        if (!html) {
+          return null;
+        }
+        var doc = new DOMParser().parseFromString(html, 'text/html');
+        var fields = doc.querySelectorAll('.gsc_oci_field');
+        for (var i = 0; i < fields.length; i++) {
+          if (fields[i].textContent.trim() === 'Authors') {
+            var value = fields[i].nextElementSibling;
+            var text = value ? value.textContent.trim() : '';
+            return text || null;
+          }
+        }
+        return null;
+      })
+      .catch(function () {
+        return null; // Best-effort: leave this publication truncated on failure.
+      });
+  }
+
+  // Resolves full author lists for still-truncated publications, one
+  // request at a time (never in parallel - polite to Scholar and keeps the
+  // budget an exact request count). Already-expanded publications
+  // (authors_full from a previous run's data, carried over server-side) are
+  // skipped before this is ever called.
+  function expandTruncatedAuthors(publications) {
+    var budget = AUTHOR_EXPANSION_BUDGET;
+    var candidates = publications.filter(function (pub) {
+      return isTruncatedAuthors(pub.authors);
+    });
+
+    function next(index) {
+      if (index >= candidates.length || budget <= 0) {
+        return Promise.resolve();
+      }
+      var pub = candidates[index];
+      budget--;
+      return fetchFullAuthors(pub.google_scholar_url).then(function (fullAuthors) {
+        if (fullAuthors) {
+          pub.authors = fullAuthors;
+          pub.authors_full = true;
+        }
+        return next(index + 1);
+      });
+    }
+
+    return next(0);
+  }
+
   function collectAllPublications() {
     // Always fetch from the first page with this bookmarklet's PAGE_SIZE.
     // The profile page may be configured to show a different number of rows,
@@ -268,6 +337,16 @@
     var data = extractProfile();
     data.publications = publications;
 
+    if (!EXPAND_AUTHORS) {
+      return data;
+    }
+
+    notify('Collecting your Scholar profile data... (fetching full author lists)');
+    return expandTruncatedAuthors(publications).then(function () {
+      return data;
+    });
+  }).then(function (data) {
+    var publications = data.publications;
     var json = JSON.stringify(data);
 
     copyToClipboard(json).then(function (copied) {

@@ -186,6 +186,22 @@ class SettingsTest extends TestCase
         $this->assertSame('server', $result['update_method']);
     }
 
+    // --- Expand authors validation ---
+
+    public function test_expand_authors_checked(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $result = $settings->sanitize_settings(['expand_authors' => '1']);
+        $this->assertSame('1', $result['expand_authors']);
+    }
+
+    public function test_expand_authors_unchecked_defaults_to_off(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $result = $settings->sanitize_settings([]);
+        $this->assertSame('0', $result['expand_authors']);
+    }
+
     // --- Complete output ---
 
     public function test_sanitize_returns_all_expected_keys(): void
@@ -206,13 +222,13 @@ class SettingsTest extends TestCase
             'profile_id', 'show_avatar', 'show_info',
             'show_publications', 'show_coauthors',
             'update_frequency', 'max_publications',
-            'update_method'
+            'update_method', 'expand_authors'
         ];
 
         foreach ($expected_keys as $key) {
             $this->assertArrayHasKey($key, $result, "Result should contain key '$key'");
         }
-        $this->assertCount(8, $result);
+        $this->assertCount(9, $result);
     }
 
     // --- Constructor hooks ---
@@ -292,6 +308,28 @@ class SettingsTest extends TestCase
         $this->assertArrayHasKey('data', $result);
         $this->assertSame('John Researcher', $result['data']['name']);
         $this->assertCount(3, $result['data']['publications']);
+    }
+
+    public function test_build_import_data_expand_authors_marks_complete_lists_without_extra_requests(): void
+    {
+        $settings = $this->createSettingsWithoutConstructor();
+        $html = file_get_contents($this->fixturesDir . 'scholar-profile-main.html');
+
+        // None of this fixture's author lines are truncated, so enabling
+        // expand_authors should only mark them resolved - never fetch. The
+        // single expected call is the (failing) avatar download.
+        Functions\expect('wp_remote_get')->once()->andReturn(new \WP_Error('test', 'mocked'));
+        Functions\expect('get_posts')->once()->andReturn([]);
+        Functions\when('get_transient')->justReturn(false);
+        Functions\when('download_url')->justReturn(new \WP_Error('test', 'mocked'));
+        Functions\when('set_transient')->justReturn(true);
+
+        $result = $settings->build_import_data($html, [], 'test123ABC', 'replace', 200, true);
+
+        $this->assertArrayHasKey('data', $result);
+        foreach ($result['data']['publications'] as $pub) {
+            $this->assertTrue($pub['authors_full']);
+        }
     }
 
     public function test_build_import_data_unrecognized_content_returns_error(): void

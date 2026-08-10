@@ -241,6 +241,26 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
                     </p>
                   </td>
                 </tr>
+
+                <tr>
+                  <th scope="row"><?php _e('Full Author Lists', 'wp-google-scholar'); ?></th>
+                  <td>
+                    <label class="scholar-checkbox-label">
+                      <input type="checkbox"
+                        name="scholar_profile_settings[expand_authors]"
+                        value="1" <?php checked('1', $options['expand_authors'] ?? '0'); ?>>
+                      <span class="scholar-checkbox-text"><?php _e('Fetch the full author list for publications Google Scholar truncates', 'wp-google-scholar'); ?></span>
+                    </label>
+                    <p class="description">
+                      <?php _e('The compact table on your profile page cuts long author lists off with "…" (this is often where your own name ends up, on papers with many authors). The full list only exists on each publication\'s own page, so resolving it costs one extra Scholar request per truncated publication.', 'wp-google-scholar'); ?>
+                      <br><strong class="scholar-warning-text"><?php _e('⚠️ Trade-off:', 'wp-google-scholar'); ?></strong>
+                      <?php _e('More requests to Google Scholar means a higher chance of temporary IP blocking, so this is capped to a small batch per update and spreads a large backlog across several runs. Once a publication\'s full list is fetched, it is cached permanently and never re-fetched.', 'wp-google-scholar'); ?>
+                      <?php if ($update_method === 'browser'): ?>
+                        <br><em><?php _e('In Browser mode: the bookmarklet resolves these itself from your own browser, which also works on hosts fully blocked from Scholar. Manual paste and the sync script instead resolve them on your server, same as Server mode - so they will not work if your server is the one being blocked.', 'wp-google-scholar'); ?></em>
+                      <?php endif; ?>
+                    </p>
+                  </td>
+                </tr>
               </table>
             </div>
 
@@ -434,7 +454,8 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
               <?php if (!empty($profile_data['avatar'])): ?>
                 <img src="<?php echo esc_url($profile_data['avatar']); ?>"
                   alt="<?php echo esc_attr($profile_data['name']); ?>"
-                  class="scholar-status-avatar">
+                  class="scholar-status-avatar"
+                  onerror="this.style.display='none'">
               <?php endif; ?>
             </div>
 

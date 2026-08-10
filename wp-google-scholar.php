@@ -101,7 +101,8 @@ function wp_scholar_activate()
       'show_coauthors' => '1',
       'update_frequency' => 'weekly',
       'max_publications' => '200',
-      'update_method' => 'server'
+      'update_method' => 'server',
+      'expand_authors' => '0'
     ));
     wp_scholar_log("Default plugin settings created");
   } else {
@@ -116,6 +117,11 @@ function wp_scholar_activate()
 
     if (!isset($options['update_method'])) {
       $options['update_method'] = 'server';
+      $updated = true;
+    }
+
+    if (!isset($options['expand_authors'])) {
+      $options['expand_authors'] = '0';
       $updated = true;
     }
 

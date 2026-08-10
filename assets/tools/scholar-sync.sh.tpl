@@ -16,6 +16,12 @@
 #   ./scholar-sync.sh            run the sync
 #   ./scholar-sync.sh --dry-run  fetch Scholar pages and print what would
 #                                 be sent, without POSTing anything
+#
+# If "Full Author Lists" is enabled in settings: this script only fetches
+# and POSTs the pages below. Expanding truncated author lists happens on
+# the WordPress server after upload, same as Server mode - so it will not
+# work if your server is the one blocked from Scholar. The bookmarklet
+# resolves them from your browser instead, which does work in that case.
 
 set -euo pipefail
 

@@ -133,8 +133,11 @@ class Scheduler
     $scraper = new Scraper();
 
     // Configure scraper limits based on settings
+    $previous_data = get_option('scholar_profile_data', array());
     $scraper_config = array(
-      'max_publications' => isset($options['max_publications']) ? intval($options['max_publications']) : 200
+      'max_publications' => isset($options['max_publications']) ? intval($options['max_publications']) : 200,
+      'expand_authors' => ($options['expand_authors'] ?? '0') === '1',
+      'previous_publications' => is_array($previous_data['publications'] ?? null) ? $previous_data['publications'] : array()
     );
     $scraper->set_config($scraper_config);
 
