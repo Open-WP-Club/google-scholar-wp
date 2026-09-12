@@ -150,6 +150,11 @@
       params.set('scholar_sort_by', sortBy);
       params.set('scholar_sort_order', sortOrder);
       params.delete('scholar_page'); // Reset to page 1
+      Array.from(params.keys()).forEach(function (key) {
+          if (key.indexOf('scholar_page_') === 0) {
+              params.delete(key);
+          }
+      });
       
       // Update URL without page reload
       const newURL = url.pathname + '?' + params.toString();

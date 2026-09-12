@@ -101,6 +101,18 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
                 </tr>
 
                 <tr>
+                  <th scope="row">
+                    <label for="profile_ids"><?php _e('Additional Profile IDs', 'wp-google-scholar'); ?></label>
+                  </th>
+                  <td>
+                    <textarea id="profile_ids" name="scholar_profile_settings[profile_ids]" rows="4" class="large-text code"><?php echo esc_textarea(implode("\n", array_diff($registered_profile_ids, array($options['profile_id'] ?? '')))); ?></textarea>
+                    <p class="description">
+                      <?php _e('Optional: enter one additional public Google Scholar Profile ID per line. Use these IDs in [scholar_profile profile_id="..."] shortcodes.', 'wp-google-scholar'); ?>
+                    </p>
+                  </td>
+                </tr>
+
+                <tr>
                   <th scope="row"><?php _e('Display Options', 'wp-google-scholar'); ?></th>
                   <td>
                     <fieldset>
@@ -313,6 +325,13 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
                     <input type="hidden" name="action" value="import_scholar_profile">
                     <?php wp_nonce_field('import_scholar_profile', 'scholar_import_nonce'); ?>
 
+                    <label for="scholar_import_profile_id"><?php _e('Profile to import', 'wp-google-scholar'); ?></label>
+                    <select name="scholar_target_profile_id" id="scholar_import_profile_id">
+                      <?php foreach ($registered_profile_ids as $registered_id): ?>
+                        <option value="<?php echo esc_attr($registered_id); ?>"><?php echo esc_html($registered_id); ?></option>
+                      <?php endforeach; ?>
+                    </select>
+
                     <textarea name="scholar_import_content" id="scholar_import_content" rows="8"
                       class="large-text code"
                       placeholder="<?php esc_attr_e('Paste bookmarklet JSON or Scholar page HTML here...', 'wp-google-scholar'); ?>"></textarea>
@@ -360,6 +379,12 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
                   <form method="post" action="<?php echo admin_url('admin-post.php'); ?>">
                     <input type="hidden" name="action" value="download_scholar_sync_script">
                     <?php wp_nonce_field('download_scholar_sync_script', 'scholar_sync_download_nonce'); ?>
+                    <label for="scholar_sync_profile_id"><?php _e('Profile to sync', 'wp-google-scholar'); ?></label>
+                    <select name="scholar_target_profile_id" id="scholar_sync_profile_id">
+                      <?php foreach ($registered_profile_ids as $registered_id): ?>
+                        <option value="<?php echo esc_attr($registered_id); ?>"><?php echo esc_html($registered_id); ?></option>
+                      <?php endforeach; ?>
+                    </select>
                     <button type="submit" class="button button-secondary">
                       ⬇ <?php _e('Download Sync Script', 'wp-google-scholar'); ?>
                     </button>
@@ -386,6 +411,13 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
                 <form method="post" action="<?php echo admin_url('admin-post.php'); ?>" id="scholar-refresh-form">
                   <input type="hidden" name="action" value="refresh_scholar_profile">
                   <?php wp_nonce_field('refresh_scholar_profile', 'scholar_refresh_nonce'); ?>
+
+                  <label for="scholar_refresh_profile_id"><?php _e('Profile to refresh', 'wp-google-scholar'); ?></label>
+                  <select name="scholar_target_profile_id" id="scholar_refresh_profile_id">
+                    <?php foreach ($registered_profile_ids as $registered_id): ?>
+                      <option value="<?php echo esc_attr($registered_id); ?>"><?php echo esc_html($registered_id); ?></option>
+                    <?php endforeach; ?>
+                  </select>
 
                   <div class="scholar-refresh-controls" id="scholar-refresh-controls">
                     <input type="submit"

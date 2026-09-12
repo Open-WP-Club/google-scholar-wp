@@ -163,6 +163,7 @@ function wp_scholar_uninstall()
   delete_option('scholar_profile_data_status');
   delete_option('scholar_profile_consecutive_failures');
   delete_option('scholar_profile_last_error_details');
+  delete_option('scholar_profile_profiles');
 
   // Remove all cached images from media library
   $attachments = get_posts(array(

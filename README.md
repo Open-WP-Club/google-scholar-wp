@@ -55,6 +55,16 @@ Add the shortcode to any post or page:
 [scholar_profile]
 ```
 
+To display a configured additional profile, pass its Profile ID:
+
+```
+[scholar_profile profile_id="OTHER_PROFILE_ID"]
+```
+
+Additional Profile IDs are entered one per line in the plugin settings. Each
+ID must be configured and imported/refreshed before its shortcode can display
+data.
+
 ### Pagination Options
 
 Control how many publications are displayed per page:
@@ -115,7 +125,7 @@ You can combine pagination and sorting options:
 
 **URL Parameters:**
 
-- `scholar_page` - Current page number
+- `scholar_page` or a profile-specific `scholar_page_*` parameter - Current page number
 - `scholar_sort_by` - Current sort field
 - `scholar_sort_order` - Current sort order
 
