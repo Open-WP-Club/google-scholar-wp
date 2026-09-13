@@ -1,0 +1,36 @@
+name: Plugin Check
+
+# Runs the official WordPress.org "Plugin Check" (PCP) tool — the same
+# checker family WordPress.org's automated release-review pipeline uses
+# for security/performance scanning. Free, official, Apache-2.0 licensed:
+# https://github.com/WordPress/plugin-check-action
+#
+# This plugin isn't distributed via the wp.org SVN repo (self-hosted via
+# GitHub Releases), so the "plugin_repo" category (readme.txt format,
+# trademarks, self-hosted-updater flag, prefixing) is skipped — it flags
+# wp.org submission requirements that don't apply here. Security,
+# performance, and general checks still apply to any WordPress plugin.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  plugin-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Run WordPress Plugin Check
+        uses: wordpress/plugin-check-action@v1
+        with:
+          exclude-directories: 'vendor,tests,node_modules,.github,build,dist,coverage'
+          categories: |
+            security
+            performance
+            general
+        continue-on-error: true # advisory only until first-run findings are triaged; no baseline mechanism to freeze pre-existing ones
