@@ -12,6 +12,17 @@ class Shortcode
     $this->seo_handler = new SEO();
   }
 
+  /**
+   * The query-string param used for this profile's pagination. The default
+   * profile keeps the plain 'scholar_page' param for backward compatibility;
+   * additional profiles each get their own so multiple embedded tables on
+   * one page don't collide.
+   */
+  protected function page_arg_for(string $profile_id, string $default_profile_id): string
+  {
+    return $profile_id === $default_profile_id ? 'scholar_page' : 'scholar_page_' . substr(md5($profile_id), 0, 8);
+  }
+
   public function render_profile($atts)
   {
     // Enqueue assets only on pages with this shortcode
@@ -79,7 +90,7 @@ class Shortcode
     }
 
     // Get current page from URL parameter
-    $page_arg = $profile_id === $default_profile_id ? 'scholar_page' : 'scholar_page_' . substr(md5($profile_id), 0, 8);
+    $page_arg = $this->page_arg_for($profile_id, $default_profile_id);
     $current_page = isset($_GET[$page_arg]) ? max(1, intval(sanitize_text_field($_GET[$page_arg]))) : 1;
     $per_page = max(1, min(100, intval($atts['per_page']))); // Limit between 1-100
 
@@ -92,12 +103,15 @@ class Shortcode
     $offset = ($current_page - 1) * $per_page;
     $paged_publications = array_slice($data['publications'], $offset, $per_page);
 
-    // Store pagination info for JavaScript
+    // Store pagination info for JavaScript. page_arg tells the sorting
+    // script which query param belongs to this table, so it only clears
+    // its own pagination state and leaves other embedded profiles alone.
     $pagination_data = array(
       'current_page' => $current_page,
       'total_pages' => $total_pages,
       'per_page' => $per_page,
-      'total_publications' => $total_publications
+      'total_publications' => $total_publications,
+      'page_arg' => $page_arg
     );
 
     ob_start();
@@ -450,7 +464,7 @@ class Shortcode
   protected function render_pagination($current_page, $total_pages, $profile_id = '', $default_profile_id = '')
   {
     // Use WordPress helpers to build URLs — avoids manipulating $_SERVER['REQUEST_URI'] directly
-    $page_arg = $profile_id === $default_profile_id ? 'scholar_page' : 'scholar_page_' . substr(md5($profile_id), 0, 8);
+    $page_arg = $this->page_arg_for($profile_id, $default_profile_id);
     $base_url = remove_query_arg($page_arg);
 
     echo '<nav class="scholar-pagination" role="navigation" aria-label="' . __('Publications pagination', 'wp-google-scholar') . '">

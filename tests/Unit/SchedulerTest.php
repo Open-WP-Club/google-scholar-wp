@@ -307,6 +307,17 @@ class SchedulerTest extends TestCase
     {
         $scheduler = $this->createSchedulerWithoutConstructor();
 
+        Functions\when('sanitize_text_field')->alias(function ($str) {
+            return trim((string) $str);
+        });
+
+        Functions\expect('get_option')
+            ->with('scholar_profile_settings', [])
+            ->andReturn(['profile_id' => 'testprofile123']);
+        Functions\expect('get_option')
+            ->with('scholar_profile_profiles_index', [])
+            ->andReturn([]);
+
         $deleted = [];
         Functions\expect('delete_option')
             ->times(4)
@@ -325,6 +336,39 @@ class SchedulerTest extends TestCase
             'scholar_profile_consecutive_failures',
         ];
         $this->assertSame($expected, $deleted);
+    }
+
+    public function test_clear_stale_data_clears_additional_profiles_too(): void
+    {
+        $scheduler = $this->createSchedulerWithoutConstructor();
+
+        Functions\when('sanitize_text_field')->alias(function ($str) {
+            return trim((string) $str);
+        });
+
+        Functions\expect('get_option')
+            ->once()
+            ->with('scholar_profile_settings', [])
+            ->andReturn(['profile_id' => 'testprofile123']);
+        Functions\expect('get_option')
+            ->once()
+            ->with('scholar_profile_profiles_index', [])
+            ->andReturn(['anotherprofile456']);
+
+        $deleted = [];
+        Functions\expect('delete_option')
+            ->andReturnUsing(function ($key) use (&$deleted) {
+                $deleted[] = $key;
+                return true;
+            });
+
+        $result = $scheduler->clear_stale_data();
+        $this->assertTrue($result);
+
+        // Default profile's 4 legacy options, plus one dedicated option for
+        // the additional profile.
+        $this->assertCount(5, $deleted);
+        $this->assertContains('scholar_profile_profile_' . md5('anotherprofile456'), $deleted);
     }
 
     // --- activate / deactivate ---
@@ -414,6 +458,36 @@ class SchedulerTest extends TestCase
 
         $scheduler->update_profile();
         $this->assertTrue(true); // The early return is the behavior under test.
+    }
+
+    public function test_update_profile_still_runs_additional_profiles_when_default_blank(): void
+    {
+        // Regression test: an admin who only fills in "Additional Profile
+        // IDs" and leaves the primary Profile ID blank must still get cron
+        // updates for those additional profiles.
+        $scheduler = $this->createSchedulerWithoutConstructor();
+
+        Functions\when('sanitize_text_field')->alias(function ($str) {
+            return trim((string) $str);
+        });
+
+        Functions\expect('get_option')
+            ->once()
+            ->with('scholar_profile_settings')
+            ->andReturn(['profile_id' => '', 'update_method' => 'server']);
+        Functions\expect('get_option')
+            ->once()
+            ->with('scholar_profile_profiles_index', [])
+            ->andReturn(['anotherprofile456']);
+        // Reading this option proves the additional profile was actually
+        // reached; a future next_retry short-circuits before any scraping.
+        Functions\expect('get_option')
+            ->once()
+            ->with('scholar_profile_profile_' . md5('anotherprofile456'), [])
+            ->andReturn(['next_retry' => time() + HOUR_IN_SECONDS]);
+
+        $scheduler->update_profile();
+        $this->assertTrue(true); // Reaching the mocked call above is the behavior under test.
     }
 
     public function test_deactivate_clears_hook(): void

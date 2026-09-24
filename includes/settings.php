@@ -102,6 +102,19 @@ class Settings
       }
     }
 
+    // Validate each additional profile ID the same way as the primary one,
+    // instead of silently dropping bad entries.
+    $additional_ids = array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', $input['profile_ids'] ?? '')));
+    foreach ($additional_ids as $additional_id) {
+      if (!ProfileStore::is_valid_id($additional_id)) {
+        // translators: %s is the invalid profile ID the admin entered
+        $validation_errors[] = sprintf(
+          __('Additional Profile ID "%s" is invalid - it must be 8-20 characters of letters, numbers, underscores, and hyphens.', 'wp-google-scholar'),
+          sanitize_text_field($additional_id)
+        );
+      }
+    }
+
     // If there are validation errors, redirect back with errors
     if (!empty($validation_errors)) {
       $error_message = implode(' ', $validation_errors);
@@ -165,8 +178,9 @@ class Settings
       exit;
     }
 
-    // Rate limiting: Prevent refreshes more than once every few minutes
-    $last_manual_refresh = get_option('scholar_profile_last_manual_refresh', 0);
+    // Rate limiting: Prevent refreshes more than once every few minutes.
+    // Scoped per profile so refreshing one profile doesn't block another.
+    $last_manual_refresh = ProfileStore::get_meta($profile_id, 'last_manual_refresh', 0, $default_profile_id);
     $time_since_last = time() - $last_manual_refresh;
 
     if ($time_since_last < self::REFRESH_COOLDOWN_SECONDS) {
@@ -184,7 +198,7 @@ class Settings
     }
 
     // Update the last manual refresh timestamp
-    update_option('scholar_profile_last_manual_refresh', time());
+    ProfileStore::set_meta($profile_id, 'last_manual_refresh', time(), $default_profile_id);
 
     if (empty($profile_id)) {
       wp_safe_redirect(add_query_arg(
@@ -500,12 +514,19 @@ class Settings
       ));
     }
 
+    $default_profile_id = $options['profile_id'] ?? '';
+    $profile_id = ProfileStore::normalize_id($target_profile_id ?: $default_profile_id);
+    if (!ProfileStore::is_registered($profile_id, $default_profile_id)) {
+      return array('error' => array('type' => 'profile_not_configured', 'message' => 'The selected Scholar profile is not configured.'));
+    }
+
     // A full replacement may download the profile avatar. Briefly lock that
     // action against double-clicks/back-button resubmits or overlapping
     // sync runs, while deliberately leaving append imports unrestricted for
-    // the expected cstart=N flow.
+    // the expected cstart=N flow. Scoped per profile so replacing profile A
+    // doesn't block replacing profile B.
     if ($import_mode === 'replace') {
-      $lock_name = 'scholar_profile_import_replace_lock';
+      $lock_name = 'scholar_profile_import_replace_lock_' . md5($profile_id);
       if (get_transient($lock_name)) {
         return array('error' => array(
           'type' => 'import_rate_limited',
@@ -513,12 +534,6 @@ class Settings
         ));
       }
       set_transient($lock_name, 1, self::IMPORT_REPLACE_COOLDOWN_SECONDS);
-    }
-
-    $default_profile_id = $options['profile_id'] ?? '';
-    $profile_id = ProfileStore::normalize_id($target_profile_id ?: $default_profile_id);
-    if (!ProfileStore::is_registered($profile_id, $default_profile_id)) {
-      return array('error' => array('type' => 'profile_not_configured', 'message' => 'The selected Scholar profile is not configured.'));
     }
 
     $existing_data = ProfileStore::get_data($profile_id, $default_profile_id) ?: array();

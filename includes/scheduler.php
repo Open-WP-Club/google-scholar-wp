@@ -109,13 +109,13 @@ class Scheduler
       return;
     }
 
-    if (empty($options['profile_id'])) {
+    $profile_ids = ProfileStore::get_ids($options['profile_id'] ?? '');
+    if (empty($profile_ids)) {
       wp_scholar_log('Scheduled update skipped: No profile ID configured');
       $this->update_data_status('error', 'No profile ID configured');
       return;
     }
 
-    $profile_ids = ProfileStore::get_ids($options['profile_id']);
     foreach ($profile_ids as $profile_id) {
       $this->update_single_profile($profile_id, $options);
     }
@@ -356,6 +356,8 @@ class Scheduler
       }
     }
 
+    $last_update = ProfileStore::get_meta($profile_id, 'last_update', 0, $default_id);
+
     $message = sprintf(
       "The Google Scholar Profile plugin has failed to update data %d consecutive times.\n\n" .
         "Profile ID: %s\n" .
@@ -367,8 +369,7 @@ class Scheduler
       $failure_count,
       $profile_id,
       $error_summary,
-      ProfileStore::get_meta($profile_id, 'last_update', 0, $default_id) ?
-        wp_date('Y-m-d H:i:s', ProfileStore::get_meta($profile_id, 'last_update', 0, $default_id)) : 'Never',
+      $last_update ? wp_date('Y-m-d H:i:s', $last_update) : 'Never',
       home_url(),
       $recommendations,
       admin_url('options-general.php?page=scholar-profile-settings')
@@ -456,10 +457,12 @@ class Scheduler
    */
   public function clear_stale_data(): bool
   {
-    delete_option('scholar_profile_data');
-    delete_option('scholar_profile_last_update');
-    delete_option('scholar_profile_data_status');
-    delete_option('scholar_profile_consecutive_failures');
+    $options = get_option('scholar_profile_settings', array());
+    $default_profile_id = $options['profile_id'] ?? '';
+
+    foreach (ProfileStore::get_ids($default_profile_id) as $profile_id) {
+      ProfileStore::delete_all($profile_id, $default_profile_id);
+    }
 
     wp_scholar_log("Stale data cleared manually");
 
