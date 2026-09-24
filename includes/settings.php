@@ -102,6 +102,19 @@ class Settings
       }
     }
 
+    // Validate each additional profile ID the same way as the primary one,
+    // instead of silently dropping bad entries.
+    $additional_ids = array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', $input['profile_ids'] ?? '')));
+    foreach ($additional_ids as $additional_id) {
+      if (!ProfileStore::is_valid_id($additional_id)) {
+        // translators: %s is the invalid profile ID the admin entered
+        $validation_errors[] = sprintf(
+          __('Additional Profile ID "%s" is invalid - it must be 8-20 characters of letters, numbers, underscores, and hyphens.', 'wp-google-scholar'),
+          sanitize_text_field($additional_id)
+        );
+      }
+    }
+
     // If there are validation errors, redirect back with errors
     if (!empty($validation_errors)) {
       $error_message = implode(' ', $validation_errors);
@@ -121,6 +134,10 @@ class Settings
     // Sanitize and save settings
     $sanitized = $this->sanitize_settings($input, $current_settings);
     update_option($this->option_name, $sanitized);
+    ProfileStore::set_registered_ids(
+      preg_split('/\r\n|\r|\n/', $input['profile_ids'] ?? ''),
+      $sanitized['profile_id']
+    );
 
     // Check if scheduler needs to be rescheduled
     $scheduler = new Scheduler();
@@ -148,6 +165,11 @@ class Settings
     // A stale tab can still submit a valid nonce after Browser mode is saved,
     // so enforce the mode here as well as in the settings-page UI.
     $options = get_option($this->option_name, array());
+    $default_profile_id = $options['profile_id'] ?? '';
+    $profile_id = ProfileStore::normalize_id($_POST['scholar_target_profile_id'] ?? $default_profile_id);
+    if (!ProfileStore::is_registered($profile_id, $default_profile_id)) {
+      $profile_id = $default_profile_id;
+    }
     if (($options['update_method'] ?? 'server') === 'browser') {
       wp_safe_redirect(add_query_arg(
         array('page' => $this->page_slug, 'refresh' => 'failed', 'message' => 'browser_mode'),
@@ -156,8 +178,9 @@ class Settings
       exit;
     }
 
-    // Rate limiting: Prevent refreshes more than once every few minutes
-    $last_manual_refresh = get_option('scholar_profile_last_manual_refresh', 0);
+    // Rate limiting: Prevent refreshes more than once every few minutes.
+    // Scoped per profile so refreshing one profile doesn't block another.
+    $last_manual_refresh = ProfileStore::get_meta($profile_id, 'last_manual_refresh', 0, $default_profile_id);
     $time_since_last = time() - $last_manual_refresh;
 
     if ($time_since_last < self::REFRESH_COOLDOWN_SECONDS) {
@@ -175,9 +198,9 @@ class Settings
     }
 
     // Update the last manual refresh timestamp
-    update_option('scholar_profile_last_manual_refresh', time());
+    ProfileStore::set_meta($profile_id, 'last_manual_refresh', time(), $default_profile_id);
 
-    if (empty($options['profile_id'])) {
+    if (empty($profile_id)) {
       wp_safe_redirect(add_query_arg(
         array('page' => $this->page_slug, 'refresh' => 'failed', 'message' => 'no_profile_id'),
         admin_url('options-general.php')
@@ -187,14 +210,14 @@ class Settings
 
     // Update status to indicate we're starting a manual refresh
     $scheduler = new Scheduler();
-    $scheduler->update_data_status('updating', 'Manual refresh in progress...');
+    $scheduler->update_data_status('updating', 'Manual refresh in progress...', $profile_id);
 
-    wp_scholar_log("Starting manual refresh for profile: " . $options['profile_id']);
+    wp_scholar_log("Starting manual refresh for profile: " . $profile_id);
 
     $scraper = new Scraper();
 
     // Configure scraper limits based on settings
-    $previous_data = get_option('scholar_profile_data', array());
+    $previous_data = ProfileStore::get_data($profile_id, $default_profile_id) ?: array();
     $scraper_config = array(
       'max_publications' => isset($options['max_publications']) ? intval($options['max_publications']) : 200,
       'expand_authors' => ($options['expand_authors'] ?? '0') === '1',
@@ -202,23 +225,23 @@ class Settings
     );
     $scraper->set_config($scraper_config);
 
-    $data = $scraper->scrape($options['profile_id']);
+    $data = $scraper->scrape($profile_id);
 
     if ($data && Scraper::validate_scraped_data($data)) {
-      update_option('scholar_profile_data', $data);
-      update_option('scholar_profile_last_update', time());
+      ProfileStore::set_data($profile_id, $data, $default_profile_id);
+      ProfileStore::set_meta($profile_id, 'last_update', time(), $default_profile_id);
 
       // Reset consecutive failures counter
-      delete_option('scholar_profile_consecutive_failures');
+      ProfileStore::delete_meta($profile_id, 'consecutive_failures', $default_profile_id);
 
       // Update status to success
       $scheduler->update_data_status('success', sprintf(
         'Manual refresh successful at %s - Found %d publications',
         wp_date('Y-m-d H:i:s'),
         count($data['publications'])
-      ));
+      ), $profile_id);
 
-      wp_scholar_log("Manual refresh successful for profile: " . $options['profile_id']);
+      wp_scholar_log("Manual refresh successful for profile: " . $profile_id);
 
       wp_safe_redirect(add_query_arg(
         array('page' => $this->page_slug, 'refresh' => 'success'),
@@ -228,29 +251,29 @@ class Settings
       // Manual refresh failed - get detailed error information
       $error_details = $scraper->get_last_error_details();
 
-      $consecutive_failures = get_option('scholar_profile_consecutive_failures', 0) + 1;
-      update_option('scholar_profile_consecutive_failures', $consecutive_failures);
+      $consecutive_failures = ProfileStore::get_meta($profile_id, 'consecutive_failures', 0, $default_profile_id) + 1;
+      ProfileStore::set_meta($profile_id, 'consecutive_failures', $consecutive_failures, $default_profile_id);
 
-      $existing_data = get_option('scholar_profile_data');
+      $existing_data = ProfileStore::get_data($profile_id, $default_profile_id);
       $has_existing_data = !empty($existing_data) && !empty($existing_data['name']);
 
       if ($has_existing_data) {
-        $last_update = get_option('scholar_profile_last_update', 0);
+        $last_update = ProfileStore::get_meta($profile_id, 'last_update', 0, $default_profile_id);
         $age_days = $last_update ? ceil((time() - $last_update) / DAY_IN_SECONDS) : 'unknown';
 
         $scheduler->update_data_status('stale', sprintf(
           'Manual refresh failed. Keeping existing data from %s days ago.',
           $age_days
-        ));
+        ), $profile_id);
       } else {
-        $scheduler->update_data_status('error', 'Manual refresh failed and no existing data available.');
+        $scheduler->update_data_status('error', 'Manual refresh failed and no existing data available.', $profile_id);
       }
 
-      wp_scholar_log("Manual refresh failed for profile: " . $options['profile_id'], 'error');
+      wp_scholar_log("Manual refresh failed for profile: " . $profile_id, 'error');
 
       // Store detailed error information for display
       if ($error_details) {
-        update_option('scholar_profile_last_error_details', $error_details);
+        ProfileStore::set_meta($profile_id, 'last_error_details', $error_details, $default_profile_id);
       }
 
       // Redirect with specific error information
@@ -311,9 +334,11 @@ class Settings
     }
 
     $options = get_option($this->option_name, array());
-    if (empty($options['profile_id'])) {
+    $default_profile_id = $options['profile_id'] ?? '';
+    $profile_id = ProfileStore::normalize_id($_POST['scholar_target_profile_id'] ?? $default_profile_id);
+    if (!ProfileStore::is_registered($profile_id, $default_profile_id)) {
       wp_safe_redirect(add_query_arg(
-        array('page' => $this->page_slug, 'sync_download' => 'failed'),
+      array('page' => $this->page_slug, 'sync_download' => 'failed'),
         admin_url('options-general.php')
       ));
       exit;
@@ -346,7 +371,7 @@ class Settings
         home_url(),
         $current_user->user_login,
         $app_password,
-        $options['profile_id'],
+        $profile_id,
         (string) intval($options['max_publications'] ?? 200),
         rest_url('wp-google-scholar/v1/import')
       ),
@@ -447,7 +472,7 @@ class Settings
       ? 'append'
       : 'replace';
 
-    $result = $this->process_import($content, $import_mode);
+    $result = $this->process_import($content, $import_mode, 'browser', $_POST['scholar_target_profile_id'] ?? '');
 
     if (isset($result['error'])) {
       wp_safe_redirect(add_query_arg(
@@ -479,7 +504,7 @@ class Settings
    * @param string $source 'browser' (manual paste) or 'sync' (automated REST API)
    * @return array Either ['data' => array] on success or ['error' => array] on failure
    */
-  public function process_import(string $content, string $import_mode, string $source = 'browser'): array
+  public function process_import(string $content, string $import_mode, string $source = 'browser', string $target_profile_id = ''): array
   {
     $options = get_option($this->option_name, array());
     if (($options['update_method'] ?? 'server') !== 'browser') {
@@ -489,12 +514,19 @@ class Settings
       ));
     }
 
+    $default_profile_id = $options['profile_id'] ?? '';
+    $profile_id = ProfileStore::normalize_id($target_profile_id ?: $default_profile_id);
+    if (!ProfileStore::is_registered($profile_id, $default_profile_id)) {
+      return array('error' => array('type' => 'profile_not_configured', 'message' => 'The selected Scholar profile is not configured.'));
+    }
+
     // A full replacement may download the profile avatar. Briefly lock that
     // action against double-clicks/back-button resubmits or overlapping
     // sync runs, while deliberately leaving append imports unrestricted for
-    // the expected cstart=N flow.
+    // the expected cstart=N flow. Scoped per profile so replacing profile A
+    // doesn't block replacing profile B.
     if ($import_mode === 'replace') {
-      $lock_name = 'scholar_profile_import_replace_lock';
+      $lock_name = 'scholar_profile_import_replace_lock_' . md5($profile_id);
       if (get_transient($lock_name)) {
         return array('error' => array(
           'type' => 'import_rate_limited',
@@ -504,11 +536,11 @@ class Settings
       set_transient($lock_name, 1, self::IMPORT_REPLACE_COOLDOWN_SECONDS);
     }
 
-    $existing_data = get_option('scholar_profile_data', array());
+    $existing_data = ProfileStore::get_data($profile_id, $default_profile_id) ?: array();
     $result = $this->build_import_data(
       $content,
       is_array($existing_data) ? $existing_data : array(),
-      $options['profile_id'] ?? '',
+      $profile_id,
       $import_mode,
       intval($options['max_publications'] ?? 200),
       ($options['expand_authors'] ?? '0') === '1'
@@ -516,9 +548,9 @@ class Settings
 
     if (isset($result['error'])) {
       wp_scholar_log('Browser import failed: ' . ($result['error']['message'] ?? 'Unknown error'), 'error');
-      update_option('scholar_profile_last_error_details', $result['error']);
+      ProfileStore::set_meta($profile_id, 'last_error_details', $result['error'], $default_profile_id);
       $scheduler = new Scheduler();
-      $scheduler->update_data_status('error', $result['error']['message'] ?? 'Browser import failed.');
+      $scheduler->update_data_status('error', $result['error']['message'] ?? 'Browser import failed.', $profile_id);
       return $result;
     }
 
@@ -529,16 +561,16 @@ class Settings
         'type' => 'validation_failed',
         'message' => 'The imported data did not look complete enough to save. Please make sure you copied the full profile page.'
       );
-      update_option('scholar_profile_last_error_details', $error);
+      ProfileStore::set_meta($profile_id, 'last_error_details', $error, $default_profile_id);
       $scheduler = new Scheduler();
-      $scheduler->update_data_status('error', $error['message']);
+      $scheduler->update_data_status('error', $error['message'], $profile_id);
       return array('error' => $error);
     }
 
-    update_option('scholar_profile_data', $data);
-    update_option('scholar_profile_last_update', time());
-    delete_option('scholar_profile_consecutive_failures');
-    delete_option('scholar_profile_last_error_details');
+    ProfileStore::set_data($profile_id, $data, $default_profile_id);
+    ProfileStore::set_meta($profile_id, 'last_update', time(), $default_profile_id);
+    ProfileStore::delete_meta($profile_id, 'consecutive_failures', $default_profile_id);
+    ProfileStore::delete_meta($profile_id, 'last_error_details', $default_profile_id);
 
     $scheduler = new Scheduler();
     $status_message = $source === 'sync'
@@ -548,9 +580,9 @@ class Settings
       $status_message,
       wp_date('Y-m-d H:i:s'),
       count($data['publications'])
-    ));
+    ), $profile_id);
 
-    wp_scholar_log('Browser import successful for profile: ' . ($options['profile_id'] ?? ''));
+    wp_scholar_log('Browser import successful for profile: ' . $profile_id);
 
     return array('data' => $data);
   }
@@ -842,6 +874,7 @@ class Settings
     }
 
     $options = get_option($this->option_name);
+    $registered_profile_ids = ProfileStore::get_ids($options['profile_id'] ?? '');
     $scheduler = new Scheduler();
     $data_status = $scheduler->get_data_status();
     $is_data_stale = $scheduler->is_data_stale();

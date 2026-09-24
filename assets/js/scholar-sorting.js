@@ -135,21 +135,41 @@
       // Update accessibility
       updateAriaLabel(header, sortBy, currentOrder);
 
-      // Reset to page 1 when sorting changes (by updating URL)
-      updateURLWithSort(sortBy, currentOrder);
+      // Reset to page 1 when sorting changes (by updating URL). Read the
+      // page param straight from this table's own profile container so
+      // multiple embedded profiles on one page don't clobber each other.
+      updateURLWithSort(sortBy, currentOrder, getPageArg(table));
+  }
+
+  /**
+   * Get the pagination query-string param for a specific table's profile.
+   */
+  function getPageArg(table) {
+      const profile = table && table.closest('.scholar-profile');
+      const paginationDataAttr = profile && profile.getAttribute('data-pagination');
+      if (!paginationDataAttr) {
+          return 'scholar_page';
+      }
+      try {
+          return JSON.parse(paginationDataAttr).page_arg || 'scholar_page';
+      } catch (e) {
+          return 'scholar_page';
+      }
   }
 
   /**
    * Update URL with sort parameters and reset to page 1
    */
-  function updateURLWithSort(sortBy, sortOrder) {
+  function updateURLWithSort(sortBy, sortOrder, pageArg) {
       const url = new URL(window.location);
-      
+
       // Update sort parameters
       const params = new URLSearchParams(url.search);
       params.set('scholar_sort_by', sortBy);
       params.set('scholar_sort_order', sortOrder);
-      params.delete('scholar_page'); // Reset to page 1
+      // Only reset this table's own page param - other embedded profiles
+      // on the same page have their own scholar_page_* param to preserve.
+      params.delete(pageArg || 'scholar_page');
       
       // Update URL without page reload
       const newURL = url.pathname + '?' + params.toString();

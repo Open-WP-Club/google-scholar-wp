@@ -12,6 +12,17 @@ class Shortcode
     $this->seo_handler = new SEO();
   }
 
+  /**
+   * The query-string param used for this profile's pagination. The default
+   * profile keeps the plain 'scholar_page' param for backward compatibility;
+   * additional profiles each get their own so multiple embedded tables on
+   * one page don't collide.
+   */
+  protected function page_arg_for(string $profile_id, string $default_profile_id): string
+  {
+    return $profile_id === $default_profile_id ? 'scholar_page' : 'scholar_page_' . substr(md5($profile_id), 0, 8);
+  }
+
   public function render_profile($atts)
   {
     // Enqueue assets only on pages with this shortcode
@@ -31,31 +42,40 @@ class Shortcode
 
     // Parse shortcode attributes
     $atts = shortcode_atts(array(
+      'profile_id' => '',
       'sort_by' => '',
       'sort_order' => 'desc',
       'per_page' => 20
     ), $atts, 'scholar_profile');
 
-    $options = get_option('scholar_profile_settings');
-    $data = get_option('scholar_profile_data');
+    $options = get_option('scholar_profile_settings', array());
+    $default_profile_id = $options['profile_id'] ?? '';
+    $profile_id = ProfileStore::normalize_id($atts['profile_id']);
+    $profile_id = $profile_id !== '' ? $profile_id : $default_profile_id;
+
+    if ($profile_id === '' || !ProfileStore::is_registered($profile_id, $default_profile_id)) {
+      return $this->render_no_data_message(__('This Scholar profile is not configured on the site.', 'wp-google-scholar'));
+    }
+
+    $data = ProfileStore::get_data($profile_id, $default_profile_id);
 
     // Check data status and display appropriate messages
     $scheduler = new Scheduler();
-    $data_status = $scheduler->get_data_status();
-    $is_data_stale = $scheduler->is_data_stale();
+    $data_status = $scheduler->get_data_status($profile_id);
+    $is_data_stale = $scheduler->is_data_stale($profile_id);
 
     if (!$data) {
       // No data available at all - check for enhanced error details
       if ($data_status['status'] === 'error') {
-        return $this->render_enhanced_error_message($data_status['message']);
+        return $this->render_enhanced_error_message($data_status['message'], $profile_id, $default_profile_id);
       } else {
-        return $this->render_no_data_message();
+        return $this->render_no_data_message(__('This Scholar profile is configured but has not been fetched yet.', 'wp-google-scholar'));
       }
     }
 
     // Validate that the data is complete
     if (!$this->validate_display_data($data)) {
-      return $this->render_enhanced_error_message(__('Profile data appears to be incomplete or corrupted.', 'wp-google-scholar'));
+      return $this->render_enhanced_error_message(__('Profile data appears to be incomplete or corrupted.', 'wp-google-scholar'), $profile_id, $default_profile_id);
     }
 
     // Add SEO enhancements
@@ -70,7 +90,8 @@ class Shortcode
     }
 
     // Get current page from URL parameter
-    $current_page = isset($_GET['scholar_page']) ? max(1, intval(sanitize_text_field($_GET['scholar_page']))) : 1;
+    $page_arg = $this->page_arg_for($profile_id, $default_profile_id);
+    $current_page = isset($_GET[$page_arg]) ? max(1, intval(sanitize_text_field($_GET[$page_arg]))) : 1;
     $per_page = max(1, min(100, intval($atts['per_page']))); // Limit between 1-100
 
     // Calculate pagination
@@ -82,19 +103,22 @@ class Shortcode
     $offset = ($current_page - 1) * $per_page;
     $paged_publications = array_slice($data['publications'], $offset, $per_page);
 
-    // Store pagination info for JavaScript
+    // Store pagination info for JavaScript. page_arg tells the sorting
+    // script which query param belongs to this table, so it only clears
+    // its own pagination state and leaves other embedded profiles alone.
     $pagination_data = array(
       'current_page' => $current_page,
       'total_pages' => $total_pages,
       'per_page' => $per_page,
-      'total_publications' => $total_publications
+      'total_publications' => $total_publications,
+      'page_arg' => $page_arg
     );
 
     ob_start();
 
     // Show stale data warning if needed
     if ($show_stale_warning) {
-      $this->render_stale_data_warning($data_status);
+      $this->render_stale_data_warning($data_status, $profile_id, $default_profile_id);
     }
 
     // Main wrapper with pagination data
@@ -103,7 +127,7 @@ class Shortcode
     // Main content section
     echo '<div class="scholar-main">';
     $this->render_header($data, $options);
-    $this->render_publications($data, $options, $paged_publications, $current_page, $total_pages, $per_page);
+    $this->render_publications($data, $options, $paged_publications, $current_page, $total_pages, $per_page, $profile_id, $default_profile_id);
     echo '</div>'; // Close main section
 
     // Sidebar
@@ -123,10 +147,10 @@ class Shortcode
   /**
    * Render enhanced error message with detailed information when available
    */
-  protected function render_enhanced_error_message($message = '')
+  protected function render_enhanced_error_message($message = '', $profile_id = '', $default_profile_id = '')
   {
     // Get detailed error information if available
-    $error_details = get_option('scholar_profile_last_error_details');
+    $error_details = ProfileStore::get_meta($profile_id, 'last_error_details', null, $default_profile_id);
 
     $default_message = __('Unable to display profile data. Please contact the site administrator.', 'wp-google-scholar');
     $display_message = !empty($message) ? $message : $default_message;
@@ -194,12 +218,13 @@ class Shortcode
   /**
    * Render message when no data is available
    */
-  protected function render_no_data_message()
+  protected function render_no_data_message($message = '')
   {
+    $message = $message ?: __('Google Scholar profile data is not yet available. Please check back later.', 'wp-google-scholar');
     return '<div class="scholar-no-data-message">
       <p class="scholar-info">
         <span class="scholar-info-icon">📚</span>
-        ' . __('Google Scholar profile data is not yet available. Please check back later.', 'wp-google-scholar') . '
+        ' . esc_html($message) . '
       </p>
     </div>';
   }
@@ -207,9 +232,9 @@ class Shortcode
   /**
    * Render warning for stale data
    */
-  protected function render_stale_data_warning($data_status)
+  protected function render_stale_data_warning($data_status, $profile_id = '', $default_profile_id = '')
   {
-    $last_update = get_option('scholar_profile_last_update', 0);
+    $last_update = ProfileStore::get_meta($profile_id, 'last_update', 0, $default_profile_id);
     $age_text = '';
 
     if ($last_update) {
@@ -326,7 +351,7 @@ class Shortcode
     echo '</div></div></div></div>';
   }
 
-  protected function render_publications($data, $options, $paged_publications, $current_page, $total_pages, $per_page)
+  protected function render_publications($data, $options, $paged_publications, $current_page, $total_pages, $per_page, $profile_id = '', $default_profile_id = '')
   {
     if (!$options['show_publications']) {
       return;
@@ -430,23 +455,24 @@ class Shortcode
 
     // Render pagination if needed
     if ($total_pages > 1) {
-      $this->render_pagination($current_page, $total_pages);
+      $this->render_pagination($current_page, $total_pages, $profile_id, $default_profile_id);
     }
 
     echo '</div></div>';
   }
 
-  protected function render_pagination($current_page, $total_pages)
+  protected function render_pagination($current_page, $total_pages, $profile_id = '', $default_profile_id = '')
   {
     // Use WordPress helpers to build URLs — avoids manipulating $_SERVER['REQUEST_URI'] directly
-    $base_url = remove_query_arg('scholar_page');
+    $page_arg = $this->page_arg_for($profile_id, $default_profile_id);
+    $base_url = remove_query_arg($page_arg);
 
     echo '<nav class="scholar-pagination" role="navigation" aria-label="' . __('Publications pagination', 'wp-google-scholar') . '">
             <div class="scholar-pagination-wrapper">';
 
     // Previous button
     if ($current_page > 1) {
-      $prev_url = add_query_arg('scholar_page', $current_page - 1, $base_url);
+      $prev_url = add_query_arg($page_arg, $current_page - 1, $base_url);
       echo '<a href="' . esc_url($prev_url) . '" class="scholar-pagination-btn scholar-pagination-prev" aria-label="' . __('Previous page', 'wp-google-scholar') . '">
                 <span aria-hidden="true">‹</span>
                 <span class="scholar-pagination-text">' . __('Previous', 'wp-google-scholar') . '</span>
@@ -466,7 +492,7 @@ class Shortcode
 
     // First page + ellipsis if needed
     if ($start_page > 1) {
-      $first_url = add_query_arg('scholar_page', 1, $base_url);
+      $first_url = add_query_arg($page_arg, 1, $base_url);
       echo '<a href="' . esc_url($first_url) . '" class="scholar-pagination-number" aria-label="' . __('Go to page 1', 'wp-google-scholar') . '">1</a>';
 
       if ($start_page > 2) {
@@ -480,7 +506,7 @@ class Shortcode
         // translators: %d is the page number
         echo '<span class="scholar-pagination-number current" aria-current="page" aria-label="' . sprintf(__('Page %d, current page', 'wp-google-scholar'), $page) . '">' . $page . '</span>';
       } else {
-        $page_url = add_query_arg('scholar_page', $page, $base_url);
+        $page_url = add_query_arg($page_arg, $page, $base_url);
         // translators: %d is the page number
         echo '<a href="' . esc_url($page_url) . '" class="scholar-pagination-number" aria-label="' . sprintf(__('Go to page %d', 'wp-google-scholar'), $page) . '">' . $page . '</a>';
       }
@@ -492,7 +518,7 @@ class Shortcode
         echo '<span class="scholar-pagination-ellipsis" aria-hidden="true">…</span>';
       }
 
-      $last_url = add_query_arg('scholar_page', $total_pages, $base_url);
+      $last_url = add_query_arg($page_arg, $total_pages, $base_url);
       // translators: %d is the last page number
       echo '<a href="' . esc_url($last_url) . '" class="scholar-pagination-number" aria-label="' . sprintf(__('Go to page %d', 'wp-google-scholar'), $total_pages) . '">' . $total_pages . '</a>';
     }
@@ -501,7 +527,7 @@ class Shortcode
 
     // Next button
     if ($current_page < $total_pages) {
-      $next_url = add_query_arg('scholar_page', $current_page + 1, $base_url);
+      $next_url = add_query_arg($page_arg, $current_page + 1, $base_url);
       echo '<a href="' . esc_url($next_url) . '" class="scholar-pagination-btn scholar-pagination-next" aria-label="' . __('Next page', 'wp-google-scholar') . '">
                 <span class="scholar-pagination-text">' . __('Next', 'wp-google-scholar') . '</span>
                 <span aria-hidden="true">›</span>
