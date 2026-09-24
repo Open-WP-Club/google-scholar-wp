@@ -8,7 +8,7 @@ if (!defined('ABSPATH')) {
 
 class SEO
 {
-  private $has_output = false;
+  private array $output_hashes = array();
 
   public function __construct()
   {
@@ -25,11 +25,26 @@ class SEO
     if (!$post || !has_shortcode($post->post_content, 'scholar_profile')) {
       return;
     }
-    $data = get_option('scholar_profile_data');
-    if (empty($data) || !is_array($data)) {
+    $options = get_option('scholar_profile_settings', array());
+    $default_id = $options['profile_id'] ?? '';
+    $shortcodes = get_shortcode_regex(array('scholar_profile'));
+    if (!preg_match_all('/' . $shortcodes . '/s', $post->post_content, $matches)) {
       return;
     }
-    $this->output_scholar_tags($data);
+
+    $seen = array();
+    foreach ($matches[3] as $attrs) {
+      $atts = shortcode_parse_atts($attrs);
+      $profile_id = ProfileStore::normalize_id($atts['profile_id'] ?? $default_id);
+      if (isset($seen[$profile_id]) || !ProfileStore::is_registered($profile_id, $default_id)) {
+        continue;
+      }
+      $data = ProfileStore::get_data($profile_id, $default_id);
+      if (!empty($data) && is_array($data)) {
+        $this->output_scholar_tags($data);
+        $seen[$profile_id] = true;
+      }
+    }
   }
 
   /**
@@ -49,11 +64,17 @@ class SEO
    */
   public function output_scholar_tags($data)
   {
-    if (empty($data) || $this->has_output) {
+    if (empty($data)) {
       return;
     }
 
-    $this->has_output = true;
+    // Same profile data can reach this method more than once per request
+    // (e.g. the same shortcode appearing twice); skip re-emitting identical tags.
+    $hash = md5(serialize($data));
+    if (isset($this->output_hashes[$hash])) {
+      return;
+    }
+    $this->output_hashes[$hash] = true;
 
     echo "\n<!-- Scholar Profile Academic Tags -->\n";
 

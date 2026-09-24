@@ -74,19 +74,19 @@ class Scheduler
     $intervals = array(
       'daily' => array(
         'interval' => 86400,
-        'display' => __('Daily', 'wp-google-scholar')
+        'display' => __('Daily', 'google-scholar-wp')
       ),
       'weekly' => array(
         'interval' => 604800,
-        'display' => __('Weekly', 'wp-google-scholar')
+        'display' => __('Weekly', 'google-scholar-wp')
       ),
       'monthly' => array(
         'interval' => 2592000,
-        'display' => __('Monthly', 'wp-google-scholar')
+        'display' => __('Monthly', 'google-scholar-wp')
       ),
       'yearly' => array(
         'interval' => 31536000,
-        'display' => __('Yearly', 'wp-google-scholar')
+        'display' => __('Yearly', 'google-scholar-wp')
       )
     );
 
@@ -109,31 +109,33 @@ class Scheduler
       return;
     }
 
-    if (empty($options['profile_id'])) {
+    $profile_ids = ProfileStore::get_ids($options['profile_id'] ?? '');
+    if (empty($profile_ids)) {
       wp_scholar_log('Scheduled update skipped: No profile ID configured');
       $this->update_data_status('error', 'No profile ID configured');
       return;
     }
 
-    // Check if we're in exponential backoff period
-    $next_retry = get_option('scholar_profile_next_retry', 0);
+    foreach ($profile_ids as $profile_id) {
+      $this->update_single_profile($profile_id, $options);
+    }
+  }
+
+  private function update_single_profile(string $profile_id, array $options): void
+  {
+    $next_retry = ProfileStore::get_meta($profile_id, 'next_retry', 0, $options['profile_id']);
     if ($next_retry > time()) {
-      $wait_time = $next_retry - time();
-      wp_scholar_log(sprintf(
-        'Scheduled update skipped: In exponential backoff period. Next retry in %d seconds (%.1f hours)',
-        $wait_time,
-        $wait_time / 3600
-      ));
       return;
     }
 
-    wp_scholar_log('Starting scheduled profile update for: ' . $options['profile_id']);
-    $this->update_data_status('updating', 'Fetching data from Google Scholar...');
+    // Check if we're in exponential backoff period
+    wp_scholar_log('Starting scheduled profile update for: ' . $profile_id);
+    $this->update_data_status('updating', 'Fetching data from Google Scholar...', $profile_id);
 
     $scraper = new Scraper();
 
     // Configure scraper limits based on settings
-    $previous_data = get_option('scholar_profile_data', array());
+    $previous_data = ProfileStore::get_data($profile_id, $options['profile_id']);
     $scraper_config = array(
       'max_publications' => isset($options['max_publications']) ? intval($options['max_publications']) : 200,
       'expand_authors' => ($options['expand_authors'] ?? '0') === '1',
@@ -141,28 +143,28 @@ class Scheduler
     );
     $scraper->set_config($scraper_config);
 
-    $data = $scraper->scrape($options['profile_id']);
+    $data = $scraper->scrape($profile_id);
 
     if ($data && Scraper::validate_scraped_data($data)) {
       // Store the new data
-      update_option('scholar_profile_data', $data);
-      update_option('scholar_profile_last_update', time());
+      ProfileStore::set_data($profile_id, $data, $options['profile_id']);
+      ProfileStore::set_meta($profile_id, 'last_update', time(), $options['profile_id']);
 
       // Update status to success
       $this->update_data_status('success', sprintf(
         'Successfully updated at %s - Found %d publications',
         wp_date('Y-m-d H:i:s'),
         count($data['publications'])
-      ));
+      ), $profile_id);
 
       // Clear any previous error status, details, and backoff timer
-      delete_option('scholar_profile_consecutive_failures');
-      delete_option('scholar_profile_last_error_details');
-      delete_option('scholar_profile_next_retry');
+      ProfileStore::delete_meta($profile_id, 'consecutive_failures', $options['profile_id']);
+      ProfileStore::delete_meta($profile_id, 'last_error_details', $options['profile_id']);
+      ProfileStore::delete_meta($profile_id, 'next_retry', $options['profile_id']);
 
       wp_scholar_log(sprintf(
         'Google Scholar Profile updated for ID: %s at %s - Found %d publications',
-        $options['profile_id'],
+        $profile_id,
         wp_date('Y-m-d H:i:s'),
         count($data['publications'])
       ));
@@ -172,11 +174,11 @@ class Scheduler
 
       // Store detailed error information for admin reference
       if ($error_details) {
-        update_option('scholar_profile_last_error_details', $error_details);
+        ProfileStore::set_meta($profile_id, 'last_error_details', $error_details, $options['profile_id']);
       }
 
       // Handle gracefully with enhanced error reporting
-      $this->handle_scraping_failure($options['profile_id'], $error_details);
+      $this->handle_scraping_failure($profile_id, $error_details, $options['profile_id']);
     }
   }
 
@@ -203,17 +205,17 @@ class Scheduler
   /**
    * Handle scraping failures with enhanced error information and exponential backoff
    */
-  private function handle_scraping_failure($profile_id, $error_details = null)
+  private function handle_scraping_failure($profile_id, $error_details = null, $default_id = '')
   {
-    $consecutive_failures = get_option('scholar_profile_consecutive_failures', 0);
+    $consecutive_failures = ProfileStore::get_meta($profile_id, 'consecutive_failures', 0, $default_id);
     $consecutive_failures++;
-    update_option('scholar_profile_consecutive_failures', $consecutive_failures);
+    ProfileStore::set_meta($profile_id, 'consecutive_failures', $consecutive_failures, $default_id);
 
     // Calculate and apply exponential backoff delay
     $retry_delay = $this->calculate_retry_delay($consecutive_failures);
     if ($retry_delay > 0) {
       $next_retry = time() + $retry_delay;
-      update_option('scholar_profile_next_retry', $next_retry);
+      ProfileStore::set_meta($profile_id, 'next_retry', $next_retry, $default_id);
       wp_scholar_log(sprintf(
         "Applying exponential backoff: next retry in %d seconds (%.1f hours) after %d failures",
         $retry_delay,
@@ -222,7 +224,7 @@ class Scheduler
       ));
     }
 
-    $existing_data = get_option('scholar_profile_data');
+    $existing_data = ProfileStore::get_data($profile_id, $default_id);
     $has_existing_data = !empty($existing_data) && !empty($existing_data['name']);
 
     // Create enhanced error message based on error details
@@ -236,7 +238,7 @@ class Scheduler
 
     if ($has_existing_data) {
       // Keep existing data but mark as stale
-      $last_update = get_option('scholar_profile_last_update', 0);
+      $last_update = ProfileStore::get_meta($profile_id, 'last_update', 0, $default_id);
       $age_days = $last_update ? ceil((time() - $last_update) / DAY_IN_SECONDS) : 'unknown';
 
       $status_message = sprintf(
@@ -246,7 +248,7 @@ class Scheduler
         $age_days
       );
 
-      $this->update_data_status('stale', $status_message);
+      $this->update_data_status('stale', $status_message, $profile_id);
 
       wp_scholar_log("Scheduled update failed for profile: $profile_id - keeping existing data (failure #$consecutive_failures) - " . $error_message, 'warning');
     } else {
@@ -257,31 +259,31 @@ class Scheduler
         $consecutive_failures
       );
 
-      $this->update_data_status('error', $status_message);
+      $this->update_data_status('error', $status_message, $profile_id);
 
       wp_scholar_log("Scheduled update failed for profile: $profile_id - no existing data available (failure #$consecutive_failures) - " . $error_message, 'error');
     }
 
     // If we've had too many consecutive failures, consider more drastic action
     if ($consecutive_failures >= WP_SCHOLAR_MAX_CONSECUTIVE_FAILURES) {
-      $this->handle_persistent_failures($profile_id, $consecutive_failures, $error_details);
+      $this->handle_persistent_failures($profile_id, $consecutive_failures, $error_details, $default_id);
     }
   }
 
   /**
    * Handle persistent scraping failures with enhanced reporting
    */
-  private function handle_persistent_failures($profile_id, $failure_count, $error_details = null)
+  private function handle_persistent_failures($profile_id, $failure_count, $error_details = null, $default_id = '')
   {
     wp_scholar_log("$failure_count consecutive failures for profile: $profile_id", 'warning');
 
     // Optionally send email notification to admin with enhanced details
     if ($failure_count === WP_SCHOLAR_MAX_CONSECUTIVE_FAILURES) {
-      $this->send_failure_notification($profile_id, $failure_count, $error_details);
+      $this->send_failure_notification($profile_id, $failure_count, $error_details, $default_id);
     }
 
     // Consider clearing old data if it's very old and we can't update it
-    $last_update = get_option('scholar_profile_last_update', 0);
+    $last_update = ProfileStore::get_meta($profile_id, 'last_update', 0, $default_id);
     $data_age_days = $last_update ? (time() - $last_update) / DAY_IN_SECONDS : 999;
 
     // Use constant from Settings class for data age threshold
@@ -310,14 +312,14 @@ class Scheduler
         '%s after %d attempts. Manual review required.',
         $error_summary,
         $failure_count
-      ));
+      ), $profile_id);
     }
   }
 
   /**
    * Send enhanced email notification about persistent failures
    */
-  private function send_failure_notification($profile_id, $failure_count, $error_details = null)
+  private function send_failure_notification($profile_id, $failure_count, $error_details = null, $default_id = '')
   {
     $admin_email = get_option('admin_email');
     $site_name = get_bloginfo('name');
@@ -354,6 +356,8 @@ class Scheduler
       }
     }
 
+    $last_update = ProfileStore::get_meta($profile_id, 'last_update', 0, $default_id);
+
     $message = sprintf(
       "The Google Scholar Profile plugin has failed to update data %d consecutive times.\n\n" .
         "Profile ID: %s\n" .
@@ -365,8 +369,7 @@ class Scheduler
       $failure_count,
       $profile_id,
       $error_summary,
-      get_option('scholar_profile_last_update') ?
-        wp_date('Y-m-d H:i:s', get_option('scholar_profile_last_update')) : 'Never',
+      $last_update ? wp_date('Y-m-d H:i:s', $last_update) : 'Never',
       home_url(),
       $recommendations,
       admin_url('options-general.php?page=scholar-profile-settings')
@@ -383,17 +386,18 @@ class Scheduler
    * @param string $message Optional status message
    * @return void
    */
-  public function update_data_status(string $status, string $message = ''): void
+  public function update_data_status(string $status, string $message = '', string $profile_id = ''): void
   {
+    $options = $profile_id !== '' ? get_option('scholar_profile_settings', array()) : array();
     $status_data = array(
       'status' => $status, // 'success', 'stale', 'error', 'updating'
       'message' => $message,
       'timestamp' => time(),
-      'consecutive_failures' => get_option('scholar_profile_consecutive_failures', 0)
+      'consecutive_failures' => ProfileStore::get_meta($profile_id, 'consecutive_failures', 0, $options['profile_id'] ?? '')
     );
 
-    update_option('scholar_profile_data_status', $status_data);
-    wp_scholar_log("Data status updated: $status - $message");
+    ProfileStore::set_status($profile_id, $status_data, $options['profile_id'] ?? '');
+    wp_scholar_log("Data status updated for " . ($profile_id ?: 'default') . ": $status - $message");
   }
 
   /**
@@ -401,14 +405,13 @@ class Scheduler
    *
    * @return array Status data with keys: status, message, timestamp, consecutive_failures
    */
-  public function get_data_status(): array
+  public function get_data_status(string $profile_id = ''): array
   {
-    return get_option('scholar_profile_data_status', array(
-      'status' => 'unknown',
-      'message' => 'No status information available',
-      'timestamp' => 0,
-      'consecutive_failures' => 0
-    ));
+    if ($profile_id === '') {
+      return ProfileStore::get_status('');
+    }
+    $options = get_option('scholar_profile_settings', array());
+    return ProfileStore::get_status($profile_id, $options['profile_id'] ?? '');
   }
 
   /**
@@ -416,10 +419,11 @@ class Scheduler
    *
    * @return bool True if data is stale, false otherwise
    */
-  public function is_data_stale(): bool
+  public function is_data_stale(string $profile_id = ''): bool
   {
-    $status = $this->get_data_status();
-    $last_update = get_option('scholar_profile_last_update', 0);
+    $options = get_option('scholar_profile_settings', array());
+    $status = $this->get_data_status($profile_id);
+    $last_update = ProfileStore::get_meta($profile_id, 'last_update', 0, $options['profile_id'] ?? '');
 
     // If status is explicitly stale or error
     if (in_array($status['status'], ['stale', 'error'])) {
@@ -428,7 +432,6 @@ class Scheduler
 
     // If data is older than expected update frequency
     if ($last_update) {
-      $options = get_option('scholar_profile_settings');
       $frequency = $options['update_frequency'] ?? 'weekly';
 
       $max_age = array(
@@ -454,10 +457,12 @@ class Scheduler
    */
   public function clear_stale_data(): bool
   {
-    delete_option('scholar_profile_data');
-    delete_option('scholar_profile_last_update');
-    delete_option('scholar_profile_data_status');
-    delete_option('scholar_profile_consecutive_failures');
+    $options = get_option('scholar_profile_settings', array());
+    $default_profile_id = $options['profile_id'] ?? '';
+
+    foreach (ProfileStore::get_ids($default_profile_id) as $profile_id) {
+      ProfileStore::delete_all($profile_id, $default_profile_id);
+    }
 
     wp_scholar_log("Stale data cleared manually");
 

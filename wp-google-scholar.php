@@ -4,11 +4,11 @@
  * Plugin Name: Google Scholar Profile Display
  * Plugin URI: https://openwpclub.com/
  * Description: Displays Google Scholar profile information using shortcode [scholar_profile]
- * Version: 1.6.0
+ * Version: 1.7.0
  * Author: OpenWPClub.com
  * Author URI: https://openwpclub.com/
  * License: GPL v2 or later
- * Text Domain: wp-google-scholar
+ * Text Domain: google-scholar-wp
  * Domain Path: /languages
  * Requires at least: 5.0
  * Requires PHP: 7.0
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('WP_SCHOLAR_VERSION', '1.6.0');
+define('WP_SCHOLAR_VERSION', '1.7.0');
 define('WP_SCHOLAR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('WP_SCHOLAR_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('WP_SCHOLAR_MAX_CONSECUTIVE_FAILURES', 5);
@@ -52,7 +52,7 @@ add_action('plugins_loaded', 'wp_scholar_init');
 function wp_scholar_init()
 {
   // Load text domain
-  load_plugin_textdomain('wp-google-scholar', false, dirname(plugin_basename(__FILE__)) . '/languages');
+  load_plugin_textdomain('google-scholar-wp', false, dirname(plugin_basename(__FILE__)) . '/languages');
 
   // Initialize classes
   $settings = new WPScholar\Settings();
@@ -155,6 +155,16 @@ register_uninstall_hook(__FILE__, 'wp_scholar_uninstall');
 
 function wp_scholar_uninstall()
 {
+  // Remove per-profile options for any additional profiles before the
+  // default profile's ID (needed to find them) is deleted below.
+  $settings = get_option('scholar_profile_settings', array());
+  $default_profile_id = $settings['profile_id'] ?? '';
+  foreach (WPScholar\ProfileStore::get_ids($default_profile_id) as $profile_id) {
+    if ($profile_id !== WPScholar\ProfileStore::normalize_id($default_profile_id)) {
+      WPScholar\ProfileStore::delete_all($profile_id, $default_profile_id);
+    }
+  }
+
   // Remove all plugin options
   delete_option('scholar_profile_settings');
   delete_option('scholar_profile_data');
@@ -163,6 +173,7 @@ function wp_scholar_uninstall()
   delete_option('scholar_profile_data_status');
   delete_option('scholar_profile_consecutive_failures');
   delete_option('scholar_profile_last_error_details');
+  delete_option('scholar_profile_profiles_index');
 
   // Remove all cached images from media library
   $attachments = get_posts(array(
@@ -264,29 +275,29 @@ function wp_scholar_admin_notices()
       $error_type = isset($error_details['type']) ? $error_details['type'] : 'unknown';
       $settings_url = admin_url('options-general.php?page=scholar-profile-settings');
 
-      // translators: %d is the number of consecutive failures
       $notice_message = sprintf(
-        __('Google Scholar Profile: %d consecutive update failures detected. ', 'wp-google-scholar'),
-        $consecutive_failures
+        // translators: %d is the number of consecutive failures
+        esc_html__('Google Scholar Profile: %d consecutive update failures detected. ', 'google-scholar-wp'),
+        (int) $consecutive_failures
       );
 
       // Add specific guidance based on error type
       switch ($error_type) {
         case 'blocked_access':
-          $notice_message .= __('Your server IP appears to be blocked by Google Scholar.', 'wp-google-scholar');
+          $notice_message .= esc_html__('Your server IP appears to be blocked by Google Scholar.', 'google-scholar-wp');
           break;
         case 'profile_not_found':
-          $notice_message .= __('The configured profile could not be found.', 'wp-google-scholar');
+          $notice_message .= esc_html__('The configured profile could not be found.', 'google-scholar-wp');
           break;
         default:
-          $notice_message .= __('Please check your configuration.', 'wp-google-scholar');
+          $notice_message .= esc_html__('Please check your configuration.', 'google-scholar-wp');
           break;
       }
 
       $notice_message .= sprintf(
         ' <a href="%s">%s</a>',
         esc_url($settings_url),
-        __('View Settings', 'wp-google-scholar')
+        esc_html__('View Settings', 'google-scholar-wp')
       );
 
       echo '<div class="notice notice-warning"><p>' . wp_kses($notice_message, array(
@@ -318,8 +329,8 @@ function wp_scholar_plugin_row_meta($links, $file)
 {
   if (plugin_basename(__FILE__) === $file) {
     $row_meta = array(
-      'docs' => '<a href="https://github.com/Open-WP-Club/wp-google-scholar" target="_blank">' . __('Documentation', 'wp-google-scholar') . '</a>',
-      'support' => '<a href="https://github.com/Open-WP-Club/wp-google-scholar/issues" target="_blank">' . __('Support', 'wp-google-scholar') . '</a>',
+      'docs' => '<a href="https://github.com/Open-WP-Club/wp-google-scholar" target="_blank">' . __('Documentation', 'google-scholar-wp') . '</a>',
+      'support' => '<a href="https://github.com/Open-WP-Club/wp-google-scholar/issues" target="_blank">' . __('Support', 'google-scholar-wp') . '</a>',
     );
     return array_merge($links, $row_meta);
   }

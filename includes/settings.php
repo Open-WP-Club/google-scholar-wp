@@ -39,8 +39,8 @@ class Settings
   public function add_menu_page()
   {
     add_options_page(
-      __('Google Scholar Profile Settings', 'wp-google-scholar'),
-      __('Scholar Profile', 'wp-google-scholar'),
+      __('Google Scholar Profile Settings', 'google-scholar-wp'),
+      __('Scholar Profile', 'google-scholar-wp'),
       'manage_options',
       $this->page_slug,
       array($this, 'render_settings_page')
@@ -65,12 +65,12 @@ class Settings
 
     // Verify user permissions
     if (!current_user_can('manage_options')) {
-      wp_die(__('You do not have sufficient permissions to access this page.', 'wp-google-scholar'));
+      wp_die(esc_html__('You do not have sufficient permissions to access this page.', 'google-scholar-wp'));
     }
 
     // Verify nonce
     if (!wp_verify_nonce($_POST['scholar_settings_nonce'], 'scholar_profile_settings')) {
-      wp_die(__('Security check failed.', 'wp-google-scholar'));
+      wp_die(esc_html__('Security check failed.', 'google-scholar-wp'));
     }
 
     // Sanitize and validate settings
@@ -83,22 +83,35 @@ class Settings
 
       // Check length (Google Scholar IDs are typically 12 characters, but allow some variation)
       if (strlen($profile_id) < self::MIN_PROFILE_ID_LENGTH || strlen($profile_id) > self::MAX_PROFILE_ID_LENGTH) {
-        // translators: %1$d is minimum length, %2$d is maximum length
         $validation_errors[] = sprintf(
-          __('Profile ID should be between %1$d-%2$d characters long.', 'wp-google-scholar'),
+          // translators: %1$d is minimum length, %2$d is maximum length
+          esc_html__('Profile ID should be between %1$d-%2$d characters long.', 'google-scholar-wp'),
           self::MIN_PROFILE_ID_LENGTH,
           self::MAX_PROFILE_ID_LENGTH
         );
       }
       // Check format - only allow letters, numbers, underscores, and hyphens
       elseif (!preg_match('/^[a-zA-Z0-9_-]+$/', $profile_id)) {
-        $validation_errors[] = __('Profile ID can only contain letters, numbers, underscores, and hyphens.', 'wp-google-scholar');
+        $validation_errors[] = __('Profile ID can only contain letters, numbers, underscores, and hyphens.', 'google-scholar-wp');
       }
       // Check for common user mistakes
       elseif (strpos($profile_id, 'user=') !== false) {
-        $validation_errors[] = __('Please enter only the Profile ID, not the full URL. Remove "user=" part.', 'wp-google-scholar');
+        $validation_errors[] = __('Please enter only the Profile ID, not the full URL. Remove "user=" part.', 'google-scholar-wp');
       } elseif (strpos($profile_id, 'scholar.google.com') !== false) {
-        $validation_errors[] = __('Please enter only the Profile ID, not the full URL.', 'wp-google-scholar');
+        $validation_errors[] = __('Please enter only the Profile ID, not the full URL.', 'google-scholar-wp');
+      }
+    }
+
+    // Validate each additional profile ID the same way as the primary one,
+    // instead of silently dropping bad entries.
+    $additional_ids = array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', $input['profile_ids'] ?? '')));
+    foreach ($additional_ids as $additional_id) {
+      if (!ProfileStore::is_valid_id($additional_id)) {
+        $validation_errors[] = sprintf(
+          // translators: %s is the invalid profile ID the admin entered
+          esc_html__('Additional Profile ID "%s" is invalid - it must be 8-20 characters of letters, numbers, underscores, and hyphens.', 'google-scholar-wp'),
+          esc_html(sanitize_text_field($additional_id))
+        );
       }
     }
 
@@ -121,6 +134,10 @@ class Settings
     // Sanitize and save settings
     $sanitized = $this->sanitize_settings($input, $current_settings);
     update_option($this->option_name, $sanitized);
+    ProfileStore::set_registered_ids(
+      preg_split('/\r\n|\r|\n/', $input['profile_ids'] ?? ''),
+      $sanitized['profile_id']
+    );
 
     // Check if scheduler needs to be rescheduled
     $scheduler = new Scheduler();
@@ -137,17 +154,22 @@ class Settings
   public function handle_manual_refresh()
   {
     if (!current_user_can('manage_options')) {
-      wp_die(__('You do not have sufficient permissions to access this page.'));
+      wp_die(esc_html__('You do not have sufficient permissions to access this page.', 'google-scholar-wp'));
     }
 
     // Verify nonce before anything else
     if (!isset($_POST['scholar_refresh_nonce']) || !wp_verify_nonce($_POST['scholar_refresh_nonce'], 'refresh_scholar_profile')) {
-      wp_die(__('Security check failed.'));
+      wp_die(esc_html__('Security check failed.', 'google-scholar-wp'));
     }
 
     // A stale tab can still submit a valid nonce after Browser mode is saved,
     // so enforce the mode here as well as in the settings-page UI.
     $options = get_option($this->option_name, array());
+    $default_profile_id = $options['profile_id'] ?? '';
+    $profile_id = ProfileStore::normalize_id($_POST['scholar_target_profile_id'] ?? $default_profile_id);
+    if (!ProfileStore::is_registered($profile_id, $default_profile_id)) {
+      $profile_id = $default_profile_id;
+    }
     if (($options['update_method'] ?? 'server') === 'browser') {
       wp_safe_redirect(add_query_arg(
         array('page' => $this->page_slug, 'refresh' => 'failed', 'message' => 'browser_mode'),
@@ -156,8 +178,9 @@ class Settings
       exit;
     }
 
-    // Rate limiting: Prevent refreshes more than once every few minutes
-    $last_manual_refresh = get_option('scholar_profile_last_manual_refresh', 0);
+    // Rate limiting: Prevent refreshes more than once every few minutes.
+    // Scoped per profile so refreshing one profile doesn't block another.
+    $last_manual_refresh = ProfileStore::get_meta($profile_id, 'last_manual_refresh', 0, $default_profile_id);
     $time_since_last = time() - $last_manual_refresh;
 
     if ($time_since_last < self::REFRESH_COOLDOWN_SECONDS) {
@@ -175,9 +198,9 @@ class Settings
     }
 
     // Update the last manual refresh timestamp
-    update_option('scholar_profile_last_manual_refresh', time());
+    ProfileStore::set_meta($profile_id, 'last_manual_refresh', time(), $default_profile_id);
 
-    if (empty($options['profile_id'])) {
+    if (empty($profile_id)) {
       wp_safe_redirect(add_query_arg(
         array('page' => $this->page_slug, 'refresh' => 'failed', 'message' => 'no_profile_id'),
         admin_url('options-general.php')
@@ -187,14 +210,14 @@ class Settings
 
     // Update status to indicate we're starting a manual refresh
     $scheduler = new Scheduler();
-    $scheduler->update_data_status('updating', 'Manual refresh in progress...');
+    $scheduler->update_data_status('updating', 'Manual refresh in progress...', $profile_id);
 
-    wp_scholar_log("Starting manual refresh for profile: " . $options['profile_id']);
+    wp_scholar_log("Starting manual refresh for profile: " . $profile_id);
 
     $scraper = new Scraper();
 
     // Configure scraper limits based on settings
-    $previous_data = get_option('scholar_profile_data', array());
+    $previous_data = ProfileStore::get_data($profile_id, $default_profile_id) ?: array();
     $scraper_config = array(
       'max_publications' => isset($options['max_publications']) ? intval($options['max_publications']) : 200,
       'expand_authors' => ($options['expand_authors'] ?? '0') === '1',
@@ -202,23 +225,23 @@ class Settings
     );
     $scraper->set_config($scraper_config);
 
-    $data = $scraper->scrape($options['profile_id']);
+    $data = $scraper->scrape($profile_id);
 
     if ($data && Scraper::validate_scraped_data($data)) {
-      update_option('scholar_profile_data', $data);
-      update_option('scholar_profile_last_update', time());
+      ProfileStore::set_data($profile_id, $data, $default_profile_id);
+      ProfileStore::set_meta($profile_id, 'last_update', time(), $default_profile_id);
 
       // Reset consecutive failures counter
-      delete_option('scholar_profile_consecutive_failures');
+      ProfileStore::delete_meta($profile_id, 'consecutive_failures', $default_profile_id);
 
       // Update status to success
       $scheduler->update_data_status('success', sprintf(
         'Manual refresh successful at %s - Found %d publications',
         wp_date('Y-m-d H:i:s'),
         count($data['publications'])
-      ));
+      ), $profile_id);
 
-      wp_scholar_log("Manual refresh successful for profile: " . $options['profile_id']);
+      wp_scholar_log("Manual refresh successful for profile: " . $profile_id);
 
       wp_safe_redirect(add_query_arg(
         array('page' => $this->page_slug, 'refresh' => 'success'),
@@ -228,29 +251,29 @@ class Settings
       // Manual refresh failed - get detailed error information
       $error_details = $scraper->get_last_error_details();
 
-      $consecutive_failures = get_option('scholar_profile_consecutive_failures', 0) + 1;
-      update_option('scholar_profile_consecutive_failures', $consecutive_failures);
+      $consecutive_failures = ProfileStore::get_meta($profile_id, 'consecutive_failures', 0, $default_profile_id) + 1;
+      ProfileStore::set_meta($profile_id, 'consecutive_failures', $consecutive_failures, $default_profile_id);
 
-      $existing_data = get_option('scholar_profile_data');
+      $existing_data = ProfileStore::get_data($profile_id, $default_profile_id);
       $has_existing_data = !empty($existing_data) && !empty($existing_data['name']);
 
       if ($has_existing_data) {
-        $last_update = get_option('scholar_profile_last_update', 0);
+        $last_update = ProfileStore::get_meta($profile_id, 'last_update', 0, $default_profile_id);
         $age_days = $last_update ? ceil((time() - $last_update) / DAY_IN_SECONDS) : 'unknown';
 
         $scheduler->update_data_status('stale', sprintf(
           'Manual refresh failed. Keeping existing data from %s days ago.',
           $age_days
-        ));
+        ), $profile_id);
       } else {
-        $scheduler->update_data_status('error', 'Manual refresh failed and no existing data available.');
+        $scheduler->update_data_status('error', 'Manual refresh failed and no existing data available.', $profile_id);
       }
 
-      wp_scholar_log("Manual refresh failed for profile: " . $options['profile_id'], 'error');
+      wp_scholar_log("Manual refresh failed for profile: " . $profile_id, 'error');
 
       // Store detailed error information for display
       if ($error_details) {
-        update_option('scholar_profile_last_error_details', $error_details);
+        ProfileStore::set_meta($profile_id, 'last_error_details', $error_details, $default_profile_id);
       }
 
       // Redirect with specific error information
@@ -276,12 +299,12 @@ class Settings
   public function handle_clear_stale_data()
   {
     if (!current_user_can('manage_options')) {
-      wp_die(__('You do not have sufficient permissions to access this page.'));
+      wp_die(esc_html__('You do not have sufficient permissions to access this page.', 'google-scholar-wp'));
     }
 
     // Verify nonce
     if (!isset($_POST['scholar_clear_nonce']) || !wp_verify_nonce($_POST['scholar_clear_nonce'], 'clear_stale_data')) {
-      wp_die(__('Security check failed.'));
+      wp_die(esc_html__('Security check failed.', 'google-scholar-wp'));
     }
 
     $scheduler = new Scheduler();
@@ -303,17 +326,19 @@ class Settings
   public function handle_download_sync_script()
   {
     if (!current_user_can('manage_options')) {
-      wp_die(__('You do not have sufficient permissions to access this page.'));
+      wp_die(esc_html__('You do not have sufficient permissions to access this page.', 'google-scholar-wp'));
     }
 
     if (!isset($_POST['scholar_sync_download_nonce']) || !wp_verify_nonce($_POST['scholar_sync_download_nonce'], 'download_scholar_sync_script')) {
-      wp_die(__('Security check failed.'));
+      wp_die(esc_html__('Security check failed.', 'google-scholar-wp'));
     }
 
     $options = get_option($this->option_name, array());
-    if (empty($options['profile_id'])) {
+    $default_profile_id = $options['profile_id'] ?? '';
+    $profile_id = ProfileStore::normalize_id($_POST['scholar_target_profile_id'] ?? $default_profile_id);
+    if (!ProfileStore::is_registered($profile_id, $default_profile_id)) {
       wp_safe_redirect(add_query_arg(
-        array('page' => $this->page_slug, 'sync_download' => 'failed'),
+      array('page' => $this->page_slug, 'sync_download' => 'failed'),
         admin_url('options-general.php')
       ));
       exit;
@@ -336,7 +361,7 @@ class Settings
     $template = file_exists($template_path) ? file_get_contents($template_path) : false;
 
     if ($template === false) {
-      wp_die(__('Sync script template is missing from this plugin install.', 'wp-google-scholar'));
+      wp_die(__('Sync script template is missing from this plugin install.', 'google-scholar-wp'));
     }
 
     $current_user = wp_get_current_user();
@@ -346,7 +371,7 @@ class Settings
         home_url(),
         $current_user->user_login,
         $app_password,
-        $options['profile_id'],
+        $profile_id,
         (string) intval($options['max_publications'] ?? 200),
         rest_url('wp-google-scholar/v1/import')
       ),
@@ -357,6 +382,7 @@ class Settings
     header('Content-Type: text/x-sh; charset=utf-8');
     header('Content-Disposition: attachment; filename="scholar-sync.sh"');
     header('Content-Length: ' . strlen($script));
+    // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- streaming a generated shell script file, not HTML; escaping would corrupt it.
     echo $script;
     exit;
   }
@@ -368,11 +394,11 @@ class Settings
   public function handle_revoke_sync_credential()
   {
     if (!current_user_can('manage_options')) {
-      wp_die(__('You do not have sufficient permissions to access this page.'));
+      wp_die(esc_html__('You do not have sufficient permissions to access this page.', 'google-scholar-wp'));
     }
 
     if (!isset($_POST['scholar_sync_revoke_nonce']) || !wp_verify_nonce($_POST['scholar_sync_revoke_nonce'], 'revoke_scholar_sync_credential')) {
-      wp_die(__('Security check failed.'));
+      wp_die(esc_html__('Security check failed.', 'google-scholar-wp'));
     }
 
     $uuid = isset($_POST['uuid']) ? sanitize_text_field($_POST['uuid']) : '';
@@ -435,11 +461,11 @@ class Settings
   public function handle_import_scholar_profile()
   {
     if (!current_user_can('manage_options')) {
-      wp_die(__('You do not have sufficient permissions to access this page.'));
+      wp_die(esc_html__('You do not have sufficient permissions to access this page.', 'google-scholar-wp'));
     }
 
     if (!isset($_POST['scholar_import_nonce']) || !wp_verify_nonce($_POST['scholar_import_nonce'], 'import_scholar_profile')) {
-      wp_die(__('Security check failed.'));
+      wp_die(esc_html__('Security check failed.', 'google-scholar-wp'));
     }
 
     $content = isset($_POST['scholar_import_content']) ? wp_unslash($_POST['scholar_import_content']) : '';
@@ -447,7 +473,7 @@ class Settings
       ? 'append'
       : 'replace';
 
-    $result = $this->process_import($content, $import_mode);
+    $result = $this->process_import($content, $import_mode, 'browser', $_POST['scholar_target_profile_id'] ?? '');
 
     if (isset($result['error'])) {
       wp_safe_redirect(add_query_arg(
@@ -479,7 +505,7 @@ class Settings
    * @param string $source 'browser' (manual paste) or 'sync' (automated REST API)
    * @return array Either ['data' => array] on success or ['error' => array] on failure
    */
-  public function process_import(string $content, string $import_mode, string $source = 'browser'): array
+  public function process_import(string $content, string $import_mode, string $source = 'browser', string $target_profile_id = ''): array
   {
     $options = get_option($this->option_name, array());
     if (($options['update_method'] ?? 'server') !== 'browser') {
@@ -489,12 +515,19 @@ class Settings
       ));
     }
 
+    $default_profile_id = $options['profile_id'] ?? '';
+    $profile_id = ProfileStore::normalize_id($target_profile_id ?: $default_profile_id);
+    if (!ProfileStore::is_registered($profile_id, $default_profile_id)) {
+      return array('error' => array('type' => 'profile_not_configured', 'message' => 'The selected Scholar profile is not configured.'));
+    }
+
     // A full replacement may download the profile avatar. Briefly lock that
     // action against double-clicks/back-button resubmits or overlapping
     // sync runs, while deliberately leaving append imports unrestricted for
-    // the expected cstart=N flow.
+    // the expected cstart=N flow. Scoped per profile so replacing profile A
+    // doesn't block replacing profile B.
     if ($import_mode === 'replace') {
-      $lock_name = 'scholar_profile_import_replace_lock';
+      $lock_name = 'scholar_profile_import_replace_lock_' . md5($profile_id);
       if (get_transient($lock_name)) {
         return array('error' => array(
           'type' => 'import_rate_limited',
@@ -504,11 +537,11 @@ class Settings
       set_transient($lock_name, 1, self::IMPORT_REPLACE_COOLDOWN_SECONDS);
     }
 
-    $existing_data = get_option('scholar_profile_data', array());
+    $existing_data = ProfileStore::get_data($profile_id, $default_profile_id) ?: array();
     $result = $this->build_import_data(
       $content,
       is_array($existing_data) ? $existing_data : array(),
-      $options['profile_id'] ?? '',
+      $profile_id,
       $import_mode,
       intval($options['max_publications'] ?? 200),
       ($options['expand_authors'] ?? '0') === '1'
@@ -516,9 +549,9 @@ class Settings
 
     if (isset($result['error'])) {
       wp_scholar_log('Browser import failed: ' . ($result['error']['message'] ?? 'Unknown error'), 'error');
-      update_option('scholar_profile_last_error_details', $result['error']);
+      ProfileStore::set_meta($profile_id, 'last_error_details', $result['error'], $default_profile_id);
       $scheduler = new Scheduler();
-      $scheduler->update_data_status('error', $result['error']['message'] ?? 'Browser import failed.');
+      $scheduler->update_data_status('error', $result['error']['message'] ?? 'Browser import failed.', $profile_id);
       return $result;
     }
 
@@ -529,16 +562,16 @@ class Settings
         'type' => 'validation_failed',
         'message' => 'The imported data did not look complete enough to save. Please make sure you copied the full profile page.'
       );
-      update_option('scholar_profile_last_error_details', $error);
+      ProfileStore::set_meta($profile_id, 'last_error_details', $error, $default_profile_id);
       $scheduler = new Scheduler();
-      $scheduler->update_data_status('error', $error['message']);
+      $scheduler->update_data_status('error', $error['message'], $profile_id);
       return array('error' => $error);
     }
 
-    update_option('scholar_profile_data', $data);
-    update_option('scholar_profile_last_update', time());
-    delete_option('scholar_profile_consecutive_failures');
-    delete_option('scholar_profile_last_error_details');
+    ProfileStore::set_data($profile_id, $data, $default_profile_id);
+    ProfileStore::set_meta($profile_id, 'last_update', time(), $default_profile_id);
+    ProfileStore::delete_meta($profile_id, 'consecutive_failures', $default_profile_id);
+    ProfileStore::delete_meta($profile_id, 'last_error_details', $default_profile_id);
 
     $scheduler = new Scheduler();
     $status_message = $source === 'sync'
@@ -548,9 +581,9 @@ class Settings
       $status_message,
       wp_date('Y-m-d H:i:s'),
       count($data['publications'])
-    ));
+    ), $profile_id);
 
-    wp_scholar_log('Browser import successful for profile: ' . ($options['profile_id'] ?? ''));
+    wp_scholar_log('Browser import successful for profile: ' . $profile_id);
 
     return array('data' => $data);
   }
@@ -758,7 +791,7 @@ class Settings
 
     wp_add_dashboard_widget(
       'scholar_profile_dashboard_widget',
-      __('Google Scholar Profile', 'wp-google-scholar'),
+      __('Google Scholar Profile', 'google-scholar-wp'),
       array($this, 'render_dashboard_widget')
     );
   }
@@ -775,12 +808,12 @@ class Settings
     $settings_url = admin_url('options-general.php?page=' . $this->page_slug);
 
     if (empty($options['profile_id'])) {
-      echo '<p>' . esc_html__('Not configured yet.', 'wp-google-scholar') . ' <a href="' . esc_url($settings_url) . '">' . esc_html__('Set up your profile', 'wp-google-scholar') . '</a></p>';
+      echo '<p>' . esc_html__('Not configured yet.', 'google-scholar-wp') . ' <a href="' . esc_url($settings_url) . '">' . esc_html__('Set up your profile', 'google-scholar-wp') . '</a></p>';
       return;
     }
 
     if (!$has_profile_data) {
-      echo '<p>' . esc_html__('Profile ID is set, but no data has been fetched yet.', 'wp-google-scholar') . ' <a href="' . esc_url($settings_url) . '">' . esc_html__('Go fetch it', 'wp-google-scholar') . '</a></p>';
+      echo '<p>' . esc_html__('Profile ID is set, but no data has been fetched yet.', 'google-scholar-wp') . ' <a href="' . esc_url($settings_url) . '">' . esc_html__('Go fetch it', 'google-scholar-wp') . '</a></p>';
       return;
     }
 
@@ -805,7 +838,7 @@ class Settings
     echo '<table class="widefat" style="margin-top:12px;">
       <tbody>
         <tr>
-          <td>' . esc_html__('Citations', 'wp-google-scholar') . '</td>
+          <td>' . esc_html__('Citations', 'google-scholar-wp') . '</td>
           <td>' . esc_html(number_format($profile_data['citations']['total'] ?? 0)) . '</td>
         </tr>
         <tr>
@@ -813,7 +846,7 @@ class Settings
           <td>' . esc_html($profile_data['citations']['h_index'] ?? 0) . '</td>
         </tr>
         <tr>
-          <td>' . esc_html__('Publications', 'wp-google-scholar') . '</td>
+          <td>' . esc_html__('Publications', 'google-scholar-wp') . '</td>
           <td>' . esc_html(count($profile_data['publications'] ?? array())) . '</td>
         </tr>
       </tbody>
@@ -823,16 +856,16 @@ class Settings
     if ($last_update) {
       printf(
         /* translators: %s: human-readable time difference, e.g. "3 days" */
-        esc_html__('Last updated %s ago.', 'wp-google-scholar'),
+        esc_html__('Last updated %s ago.', 'google-scholar-wp'),
         esc_html(human_time_diff($last_update, current_time('timestamp')))
       );
     }
     if ($is_data_stale) {
-      echo ' <span style="color:#d63638;">⚠ ' . esc_html($data_status['status'] === 'error' ? __('Update failing.', 'wp-google-scholar') : __('May be outdated.', 'wp-google-scholar')) . '</span>';
+      echo ' <span style="color:#d63638;">⚠ ' . esc_html($data_status['status'] === 'error' ? __('Update failing.', 'google-scholar-wp') : __('May be outdated.', 'google-scholar-wp')) . '</span>';
     }
     echo '</p>';
 
-    echo '<p><a href="' . esc_url($settings_url) . '">' . esc_html__('View full settings →', 'wp-google-scholar') . '</a></p>';
+    echo '<p><a href="' . esc_url($settings_url) . '">' . esc_html__('View full settings →', 'google-scholar-wp') . '</a></p>';
   }
 
   public function render_settings_page()
@@ -842,6 +875,7 @@ class Settings
     }
 
     $options = get_option($this->option_name);
+    $registered_profile_ids = ProfileStore::get_ids($options['profile_id'] ?? '');
     $scheduler = new Scheduler();
     $data_status = $scheduler->get_data_status();
     $is_data_stale = $scheduler->is_data_stale();
@@ -869,7 +903,7 @@ class Settings
       if ($_GET['clear'] === 'success') {
         $messages[] = array(
           'type' => 'updated',
-          'message' => __('✓ Stale data cleared successfully!', 'wp-google-scholar')
+          'message' => __('✓ Stale data cleared successfully!', 'google-scholar-wp')
         );
       }
     }
@@ -878,7 +912,7 @@ class Settings
       if ($_GET['refresh'] === 'success') {
         $messages[] = array(
           'type' => 'updated',
-          'message' => __('✓ Profile data refreshed successfully!', 'wp-google-scholar')
+          'message' => __('✓ Profile data refreshed successfully!', 'google-scholar-wp')
         );
       } elseif ($_GET['refresh'] === 'failed') {
         // Get enhanced error message based on error type
@@ -896,7 +930,7 @@ class Settings
       if ($_GET['import'] === 'success') {
         $messages[] = array(
           'type' => 'updated',
-          'message' => __('✓ Profile data imported successfully!', 'wp-google-scholar')
+          'message' => __('✓ Profile data imported successfully!', 'google-scholar-wp')
         );
       } elseif ($_GET['import'] === 'failed') {
         $messages[] = array(
@@ -910,19 +944,19 @@ class Settings
     elseif (isset($_GET['sync_download']) && $_GET['sync_download'] === 'failed') {
       $messages[] = array(
         'type' => 'error',
-        'message' => '⚠ ' . __('Enter and save a Profile ID before downloading the sync script.', 'wp-google-scholar')
+        'message' => '⚠ ' . __('Enter and save a Profile ID before downloading the sync script.', 'google-scholar-wp')
       );
     } elseif (isset($_GET['sync_revoke']) && $_GET['sync_revoke'] === 'success') {
       $messages[] = array(
         'type' => 'updated',
-        'message' => __('✓ Sync credential revoked.', 'wp-google-scholar')
+        'message' => __('✓ Sync credential revoked.', 'google-scholar-wp')
       );
     }
     // Only check for settings-updated if refresh/import are NOT set
     elseif (isset($_GET['settings-updated']) && $_GET['settings-updated'] === 'true') {
       $messages[] = array(
         'type' => 'updated',
-        'message' => __('✓ Settings saved successfully!', 'wp-google-scholar')
+        'message' => __('✓ Settings saved successfully!', 'google-scholar-wp')
       );
     }
 
@@ -931,7 +965,7 @@ class Settings
       $status_message = $data_status['message'] ?: 'Data may be outdated';
       $messages[] = array(
         'type' => 'warning',
-        'message' => '⚠ ' . __('Data Status Warning: ', 'wp-google-scholar') . $status_message
+        'message' => '⚠ ' . __('Data Status Warning: ', 'google-scholar-wp') . $status_message
       );
     }
 
@@ -954,15 +988,15 @@ class Settings
     // This failure is local to the current request. Prefer it to an old
     // server-side error retained for troubleshooting.
     if (isset($get_params['error_type']) && $get_params['error_type'] === 'validation_failed') {
-      return __('The imported data did not look complete enough to save. Please make sure you copied the full profile page.', 'wp-google-scholar');
+      return __('The imported data did not look complete enough to save. Please make sure you copied the full profile page.', 'google-scholar-wp');
     }
 
     if (isset($get_params['error_type']) && $get_params['error_type'] === 'import_rate_limited') {
-      return __('Please wait a few seconds before replacing profile data again.', 'wp-google-scholar');
+      return __('Please wait a few seconds before replacing profile data again.', 'google-scholar-wp');
     }
 
     if (isset($get_params['error_type']) && $get_params['error_type'] === 'browser_mode_required') {
-      return __('Select Browser mode before importing profile data.', 'wp-google-scholar');
+      return __('Select Browser mode before importing profile data.', 'google-scholar-wp');
     }
 
     $error_details = get_option('scholar_profile_last_error_details');
@@ -977,7 +1011,7 @@ class Settings
       }
     }
 
-    return __('Could not import the pasted content. Please check it and try again.', 'wp-google-scholar');
+    return __('Could not import the pasted content. Please check it and try again.', 'google-scholar-wp');
   }
 
   /**
@@ -1020,18 +1054,18 @@ class Settings
     if (isset($get_params['message'])) {
       switch ($get_params['message']) {
         case 'no_profile_id':
-          return __('Please enter a Profile ID before refreshing.', 'wp-google-scholar');
+          return __('Please enter a Profile ID before refreshing.', 'google-scholar-wp');
 
         case 'rate_limited':
           $minutes = isset($get_params['minutes']) ? intval($get_params['minutes']) : 5;
           // translators: %d is the number of minutes to wait
           return sprintf(
-            __('Please wait %d more minute(s) before refreshing again. This prevents rate limiting from Google Scholar.', 'wp-google-scholar'),
+            __('Please wait %d more minute(s) before refreshing again. This prevents rate limiting from Google Scholar.', 'google-scholar-wp'),
             $minutes
           );
 
         case 'browser_mode':
-          return __('Server-side refresh is disabled while Browser mode is selected. Use the Browser-Assisted Import panel instead.', 'wp-google-scholar');
+          return __('Server-side refresh is disabled while Browser mode is selected. Use the Browser-Assisted Import panel instead.', 'google-scholar-wp');
       }
     }
 
@@ -1046,9 +1080,9 @@ class Settings
     // Fallback to generic messages
     $existing_data = get_option('scholar_profile_data');
     if (!empty($existing_data)) {
-      return __('Could not retrieve new data from Google Scholar, but existing data is preserved. Please check the details below and try again later.', 'wp-google-scholar');
+      return __('Could not retrieve new data from Google Scholar, but existing data is preserved. Please check the details below and try again later.', 'google-scholar-wp');
     } else {
-      return __('Could not retrieve data from Google Scholar. Please check the details below and try again.', 'wp-google-scholar');
+      return __('Could not retrieve data from Google Scholar. Please check the details below and try again.', 'google-scholar-wp');
     }
   }
 
@@ -1068,7 +1102,7 @@ class Settings
     }
 
     if (!empty($error_details['suggestions']) && is_array($error_details['suggestions'])) {
-      $message .= '<br><br><strong>' . __('What you can try:', 'wp-google-scholar') . '</strong>';
+      $message .= '<br><br><strong>' . __('What you can try:', 'google-scholar-wp') . '</strong>';
       $message .= '<ul class="scholar-error-suggestions">';
       foreach ($error_details['suggestions'] as $suggestion) {
         $message .= '<li>' . esc_html($suggestion) . '</li>';
@@ -1079,10 +1113,10 @@ class Settings
     // Add specific guidance for blocked access (403 errors)
     if ($error_details['type'] === 'blocked_access') {
       $message .= '<br><div class="scholar-error-blocked-notice">';
-      $message .= '<strong>🔒 ' . __('Server Access Blocked', 'wp-google-scholar') . '</strong><br>';
-      $message .= __('This is the most common issue and is usually temporary. Google Scholar blocks server IPs that make too many requests.', 'wp-google-scholar');
-      $message .= '<br><strong>' . __('Recommended action:', 'wp-google-scholar') . '</strong> ';
-      $message .= __('Wait 1-2 hours and try again. If the problem persists, contact your hosting provider.', 'wp-google-scholar');
+      $message .= '<strong>🔒 ' . __('Server Access Blocked', 'google-scholar-wp') . '</strong><br>';
+      $message .= __('This is the most common issue and is usually temporary. Google Scholar blocks server IPs that make too many requests.', 'google-scholar-wp');
+      $message .= '<br><strong>' . __('Recommended action:', 'google-scholar-wp') . '</strong> ';
+      $message .= __('Wait 1-2 hours and try again. If the problem persists, contact your hosting provider.', 'google-scholar-wp');
       $message .= '</div>';
     }
 
@@ -1139,7 +1173,7 @@ class Settings
     $settings_link = sprintf(
       '<a href="%s">%s</a>',
       admin_url('options-general.php?page=' . $this->page_slug),
-      __('Settings', 'wp-google-scholar')
+      __('Settings', 'google-scholar-wp')
     );
     array_unshift($links, $settings_link);
     return $links;
