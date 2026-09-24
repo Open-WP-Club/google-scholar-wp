@@ -36,7 +36,7 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
 ?>
 
 <div class="wrap">
-  <h1><?php _e('Google Scholar Profile', 'wp-google-scholar'); ?></h1>
+  <h1><?php esc_html_e('Google Scholar Profile', 'google-scholar-wp'); ?></h1>
 
   <?php if (!empty($messages)): ?>
     <?php foreach ($messages as $message): ?>
@@ -78,13 +78,13 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
             <div class="scholar-step">
               <div class="scholar-step-header">
                 <span class="scholar-step-badge">1</span>
-                <h2><?php _e('Profile', 'wp-google-scholar'); ?></h2>
+                <h2><?php esc_html_e('Profile', 'google-scholar-wp'); ?></h2>
               </div>
 
               <table class="form-table" role="presentation">
                 <tr>
                   <th scope="row">
-                    <label for="profile_id"><?php _e('Profile ID', 'wp-google-scholar'); ?></label>
+                    <label for="profile_id"><?php esc_html_e('Profile ID', 'google-scholar-wp'); ?></label>
                   </th>
                   <td>
                     <input type="text"
@@ -94,56 +94,56 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
                       class="regular-text"
                       placeholder="e.g., XXXXXXXXXX">
                     <p class="description">
-                      <?php _e('Your Google Scholar profile ID from the URL: https://scholar.google.com/citations?user=<strong>PROFILE_ID</strong>', 'wp-google-scholar'); ?>
-                      <br><em><?php _e('💡 Tip: Copy only the ID part after "user=" - not the full URL', 'wp-google-scholar'); ?></em>
+                      <?php echo wp_kses_post(__('Your Google Scholar profile ID from the URL: https://scholar.google.com/citations?user=<strong>PROFILE_ID</strong>', 'google-scholar-wp')); ?>
+                      <br><em><?php esc_html_e('💡 Tip: Copy only the ID part after "user=" - not the full URL', 'google-scholar-wp'); ?></em>
                     </p>
                   </td>
                 </tr>
 
                 <tr>
                   <th scope="row">
-                    <label for="profile_ids"><?php _e('Additional Profile IDs', 'wp-google-scholar'); ?></label>
+                    <label for="profile_ids"><?php esc_html_e('Additional Profile IDs', 'google-scholar-wp'); ?></label>
                   </th>
                   <td>
                     <textarea id="profile_ids" name="scholar_profile_settings[profile_ids]" rows="4" class="large-text code"><?php echo esc_textarea(implode("\n", array_diff($registered_profile_ids, array($options['profile_id'] ?? '')))); ?></textarea>
                     <p class="description">
-                      <?php _e('Optional: enter one additional public Google Scholar Profile ID per line. Use these IDs in [scholar_profile profile_id="..."] shortcodes.', 'wp-google-scholar'); ?>
+                      <?php esc_html_e('Optional: enter one additional public Google Scholar Profile ID per line. Use these IDs in [scholar_profile profile_id="..."] shortcodes.', 'google-scholar-wp'); ?>
                     </p>
                   </td>
                 </tr>
 
                 <tr>
-                  <th scope="row"><?php _e('Display Options', 'wp-google-scholar'); ?></th>
+                  <th scope="row"><?php esc_html_e('Display Options', 'google-scholar-wp'); ?></th>
                   <td>
                     <fieldset>
-                      <legend class="screen-reader-text"><?php _e('Display Options', 'wp-google-scholar'); ?></legend>
+                      <legend class="screen-reader-text"><?php esc_html_e('Display Options', 'google-scholar-wp'); ?></legend>
 
                       <label class="scholar-checkbox-label">
                         <input type="checkbox"
                           name="scholar_profile_settings[show_avatar]"
                           value="1" <?php checked('1', $options['show_avatar']); ?>>
-                        <span class="scholar-checkbox-text"><?php _e('Show profile avatar', 'wp-google-scholar'); ?></span>
+                        <span class="scholar-checkbox-text"><?php esc_html_e('Show profile avatar', 'google-scholar-wp'); ?></span>
                       </label>
 
                       <label class="scholar-checkbox-label">
                         <input type="checkbox"
                           name="scholar_profile_settings[show_info]"
                           value="1" <?php checked('1', $options['show_info']); ?>>
-                        <span class="scholar-checkbox-text"><?php _e('Show profile information', 'wp-google-scholar'); ?></span>
+                        <span class="scholar-checkbox-text"><?php esc_html_e('Show profile information', 'google-scholar-wp'); ?></span>
                       </label>
 
                       <label class="scholar-checkbox-label">
                         <input type="checkbox"
                           name="scholar_profile_settings[show_publications]"
                           value="1" <?php checked('1', $options['show_publications']); ?>>
-                        <span class="scholar-checkbox-text"><?php _e('Show publications list', 'wp-google-scholar'); ?></span>
+                        <span class="scholar-checkbox-text"><?php esc_html_e('Show publications list', 'google-scholar-wp'); ?></span>
                       </label>
 
                       <label class="scholar-checkbox-label">
                         <input type="checkbox"
                           name="scholar_profile_settings[show_coauthors]"
                           value="1" <?php checked('1', $options['show_coauthors']); ?>>
-                        <span class="scholar-checkbox-text"><?php _e('Show co-authors', 'wp-google-scholar'); ?></span>
+                        <span class="scholar-checkbox-text"><?php esc_html_e('Show co-authors', 'google-scholar-wp'); ?></span>
                       </label>
                     </fieldset>
                   </td>
@@ -155,34 +155,34 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
             <div class="scholar-step">
               <div class="scholar-step-header">
                 <span class="scholar-step-badge">2</span>
-                <h2><?php _e('How updates happen', 'wp-google-scholar'); ?></h2>
+                <h2><?php esc_html_e('How updates happen', 'google-scholar-wp'); ?></h2>
               </div>
               <p class="scholar-step-intro">
-                <?php _e('Choose where publication data comes from. This only decides the method - it does not fetch anything by itself.', 'wp-google-scholar'); ?>
+                <?php esc_html_e('Choose where publication data comes from. This only decides the method - it does not fetch anything by itself.', 'google-scholar-wp'); ?>
               </p>
 
               <table class="form-table" role="presentation">
                 <tr>
-                  <th scope="row"><?php _e('Update Method', 'wp-google-scholar'); ?></th>
+                  <th scope="row"><?php esc_html_e('Update Method', 'google-scholar-wp'); ?></th>
                   <td>
                     <fieldset>
-                      <legend class="screen-reader-text"><?php _e('Update Method', 'wp-google-scholar'); ?></legend>
+                      <legend class="screen-reader-text"><?php esc_html_e('Update Method', 'google-scholar-wp'); ?></legend>
 
                       <label class="scholar-checkbox-label">
                         <input type="radio"
                           name="scholar_profile_settings[update_method]"
                           value="server" <?php checked('server', $update_method); ?>>
-                        <span class="scholar-checkbox-text"><?php _e('Server (automatic)', 'wp-google-scholar'); ?></span>
+                        <span class="scholar-checkbox-text"><?php esc_html_e('Server (automatic)', 'google-scholar-wp'); ?></span>
                       </label>
                       <label class="scholar-checkbox-label">
                         <input type="radio"
                           name="scholar_profile_settings[update_method]"
                           value="browser" <?php checked('browser', $update_method); ?>>
-                        <span class="scholar-checkbox-text"><?php _e('Browser (manual, for hosts that block scraping)', 'wp-google-scholar'); ?></span>
+                        <span class="scholar-checkbox-text"><?php esc_html_e('Browser (manual, for hosts that block scraping)', 'google-scholar-wp'); ?></span>
                       </label>
                     </fieldset>
                     <p class="description">
-                      <?php _e('Server mode fetches data automatically from your server on the schedule below. If your host blocks outbound requests to Google Scholar (HTTP 403/429 errors), switch to Browser mode to fetch data through your own browser instead - not automatic, but works where server scraping does not.', 'wp-google-scholar'); ?>
+                      <?php esc_html_e('Server mode fetches data automatically from your server on the schedule below. If your host blocks outbound requests to Google Scholar (HTTP 403/429 errors), switch to Browser mode to fetch data through your own browser instead - not automatic, but works where server scraping does not.', 'google-scholar-wp'); ?>
                     </p>
                   </td>
                 </tr>
@@ -190,38 +190,38 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
                 <?php if ($update_method === 'server'): ?>
                   <tr>
                     <th scope="row">
-                      <label for="update_frequency"><?php _e('Update Frequency', 'wp-google-scholar'); ?></label>
+                      <label for="update_frequency"><?php esc_html_e('Update Frequency', 'google-scholar-wp'); ?></label>
                     </th>
                     <td>
                       <select id="update_frequency" name="scholar_profile_settings[update_frequency]">
                         <option value="daily" <?php selected($options['update_frequency'], 'daily'); ?>>
-                          <?php _e('Daily', 'wp-google-scholar'); ?>
+                          <?php esc_html_e('Daily', 'google-scholar-wp'); ?>
                         </option>
                         <option value="weekly" <?php selected($options['update_frequency'], 'weekly'); ?>>
-                          <?php _e('Weekly', 'wp-google-scholar'); ?>
+                          <?php esc_html_e('Weekly', 'google-scholar-wp'); ?>
                         </option>
                         <option value="monthly" <?php selected($options['update_frequency'], 'monthly'); ?>>
-                          <?php _e('Monthly (Recommended)', 'wp-google-scholar'); ?>
+                          <?php esc_html_e('Monthly (Recommended)', 'google-scholar-wp'); ?>
                         </option>
                         <option value="yearly" <?php selected($options['update_frequency'], 'yearly'); ?>>
-                          <?php _e('Yearly', 'wp-google-scholar'); ?>
+                          <?php esc_html_e('Yearly', 'google-scholar-wp'); ?>
                         </option>
                       </select>
                       <p class="description">
-                        <?php _e('How often to automatically refresh profile data from Google Scholar.', 'wp-google-scholar'); ?>
+                        <?php esc_html_e('How often to automatically refresh profile data from Google Scholar.', 'google-scholar-wp'); ?>
                         <?php if ($next_scheduled): ?>
-                          <br><strong><?php _e('Next automatic update:', 'wp-google-scholar'); ?></strong>
-                          <?php echo date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $next_scheduled); ?>
+                          <br><strong><?php esc_html_e('Next automatic update:', 'google-scholar-wp'); ?></strong>
+                          <?php echo esc_html(date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $next_scheduled)); ?>
                         <?php endif; ?>
                       </p>
                     </td>
                   </tr>
                 <?php else: ?>
                   <tr>
-                    <th scope="row"><?php _e('Update Frequency', 'wp-google-scholar'); ?></th>
+                    <th scope="row"><?php esc_html_e('Update Frequency', 'google-scholar-wp'); ?></th>
                     <td>
                       <p class="description">
-                        <?php _e('Not used in Browser mode. Automatic updates are off - you fetch data yourself in step 3 below.', 'wp-google-scholar'); ?>
+                        <?php esc_html_e('Not used in Browser mode. Automatic updates are off - you fetch data yourself in step 3 below.', 'google-scholar-wp'); ?>
                       </p>
                     </td>
                   </tr>
@@ -229,46 +229,46 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
 
                 <tr>
                   <th scope="row">
-                    <label for="max_publications"><?php _e('Max Publications', 'wp-google-scholar'); ?></label>
+                    <label for="max_publications"><?php esc_html_e('Max Publications', 'google-scholar-wp'); ?></label>
                   </th>
                   <td>
                     <select id="max_publications" name="scholar_profile_settings[max_publications]">
                       <option value="50" <?php selected($options['max_publications'] ?? '200', '50'); ?>>
-                        <?php _e('50 publications', 'wp-google-scholar'); ?>
+                        <?php esc_html_e('50 publications', 'google-scholar-wp'); ?>
                       </option>
                       <option value="100" <?php selected($options['max_publications'] ?? '200', '100'); ?>>
-                        <?php _e('100 publications', 'wp-google-scholar'); ?>
+                        <?php esc_html_e('100 publications', 'google-scholar-wp'); ?>
                       </option>
                       <option value="200" <?php selected($options['max_publications'] ?? '200', '200'); ?>>
-                        <?php _e('200 publications (recommended)', 'wp-google-scholar'); ?>
+                        <?php esc_html_e('200 publications (recommended)', 'google-scholar-wp'); ?>
                       </option>
                       <option value="500" <?php selected($options['max_publications'] ?? '200', '500'); ?>>
-                        <?php _e('500 publications', 'wp-google-scholar'); ?>
+                        <?php esc_html_e('500 publications', 'google-scholar-wp'); ?>
                       </option>
                     </select>
                     <p class="description">
-                      <?php _e('Maximum number of publications to fetch from Google Scholar. Applies to both update methods above. Higher numbers take longer to process.', 'wp-google-scholar'); ?>
-                      <br><strong class="scholar-warning-text"><?php _e('⚠️ Warning:', 'wp-google-scholar'); ?></strong>
-                      <?php _e('Fetching large numbers of publications (500+) may temporarily trigger IP rate limiting from Google Scholar. Use higher limits sparingly and consider longer update intervals.', 'wp-google-scholar'); ?>
+                      <?php esc_html_e('Maximum number of publications to fetch from Google Scholar. Applies to both update methods above. Higher numbers take longer to process.', 'google-scholar-wp'); ?>
+                      <br><strong class="scholar-warning-text"><?php esc_html_e('⚠️ Warning:', 'google-scholar-wp'); ?></strong>
+                      <?php esc_html_e('Fetching large numbers of publications (500+) may temporarily trigger IP rate limiting from Google Scholar. Use higher limits sparingly and consider longer update intervals.', 'google-scholar-wp'); ?>
                     </p>
                   </td>
                 </tr>
 
                 <tr>
-                  <th scope="row"><?php _e('Full Author Lists', 'wp-google-scholar'); ?></th>
+                  <th scope="row"><?php esc_html_e('Full Author Lists', 'google-scholar-wp'); ?></th>
                   <td>
                     <label class="scholar-checkbox-label">
                       <input type="checkbox"
                         name="scholar_profile_settings[expand_authors]"
                         value="1" <?php checked('1', $options['expand_authors'] ?? '0'); ?>>
-                      <span class="scholar-checkbox-text"><?php _e('Fetch the full author list for publications Google Scholar truncates', 'wp-google-scholar'); ?></span>
+                      <span class="scholar-checkbox-text"><?php esc_html_e('Fetch the full author list for publications Google Scholar truncates', 'google-scholar-wp'); ?></span>
                     </label>
                     <p class="description">
-                      <?php _e('The compact table on your profile page cuts long author lists off with "…" (this is often where your own name ends up, on papers with many authors). The full list only exists on each publication\'s own page, so resolving it costs one extra Scholar request per truncated publication.', 'wp-google-scholar'); ?>
-                      <br><strong class="scholar-warning-text"><?php _e('⚠️ Trade-off:', 'wp-google-scholar'); ?></strong>
-                      <?php _e('More requests to Google Scholar means a higher chance of temporary IP blocking, so this is capped to a small batch per update and spreads a large backlog across several runs. Once a publication\'s full list is fetched, it is cached permanently and never re-fetched.', 'wp-google-scholar'); ?>
+                      <?php esc_html_e('The compact table on your profile page cuts long author lists off with "…" (this is often where your own name ends up, on papers with many authors). The full list only exists on each publication\'s own page, so resolving it costs one extra Scholar request per truncated publication.', 'google-scholar-wp'); ?>
+                      <br><strong class="scholar-warning-text"><?php esc_html_e('⚠️ Trade-off:', 'google-scholar-wp'); ?></strong>
+                      <?php esc_html_e('More requests to Google Scholar means a higher chance of temporary IP blocking, so this is capped to a small batch per update and spreads a large backlog across several runs. Once a publication\'s full list is fetched, it is cached permanently and never re-fetched.', 'google-scholar-wp'); ?>
                       <?php if ($update_method === 'browser'): ?>
-                        <br><em><?php _e('In Browser mode: the bookmarklet resolves these itself from your own browser, which also works on hosts fully blocked from Scholar. Manual paste and the sync script instead resolve them on your server, same as Server mode - so they will not work if your server is the one being blocked.', 'wp-google-scholar'); ?></em>
+                        <br><em><?php esc_html_e('In Browser mode: the bookmarklet resolves these itself from your own browser, which also works on hosts fully blocked from Scholar. Manual paste and the sync script instead resolve them on your server, same as Server mode - so they will not work if your server is the one being blocked.', 'google-scholar-wp'); ?></em>
                       <?php endif; ?>
                     </p>
                   </td>
@@ -277,7 +277,7 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
             </div>
 
             <div class="scholar-form-actions">
-              <?php submit_button(__('Save Settings', 'wp-google-scholar'), 'primary', 'submit', false); ?>
+              <?php submit_button(__('Save Settings', 'google-scholar-wp'), 'primary', 'submit', false); ?>
             </div>
           </form>
         </div>
@@ -287,45 +287,45 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
           <div class="scholar-step">
             <div class="scholar-step-header">
               <span class="scholar-step-badge scholar-step-badge-action">3</span>
-              <h2><?php _e('Get your data', 'wp-google-scholar'); ?></h2>
+              <h2><?php esc_html_e('Get your data', 'google-scholar-wp'); ?></h2>
             </div>
             <p class="scholar-step-intro">
-              <?php _e('This is separate from "Save Settings" above - saving your settings never fetches data by itself. Use the action below whenever you actually want to pull data from Google Scholar.', 'wp-google-scholar'); ?>
+              <?php esc_html_e('This is separate from "Save Settings" above - saving your settings never fetches data by itself. Use the action below whenever you actually want to pull data from Google Scholar.', 'google-scholar-wp'); ?>
             </p>
 
             <?php if ($update_method === 'browser'): ?>
               <!-- Browser-Assisted Import Panel -->
               <div class="scholar-refresh-section">
-                <h3><?php _e('Browser-Assisted Import', 'wp-google-scholar'); ?></h3>
+                <h3><?php esc_html_e('Browser-Assisted Import', 'google-scholar-wp'); ?></h3>
 
                 <?php if (empty($options['profile_id'])): ?>
-                  <p class="description"><?php _e('Enter and save a Profile ID above first.', 'wp-google-scholar'); ?></p>
+                  <p class="description"><?php esc_html_e('Enter and save a Profile ID above first.', 'google-scholar-wp'); ?></p>
                 <?php else: ?>
                   <p class="description">
-                    <?php _e('Bookmarklet (recommended): drag the button below to your bookmarks bar. Open your Scholar profile, click it, then come back here and paste.', 'wp-google-scholar'); ?>
+                    <?php esc_html_e('Bookmarklet (recommended): drag the button below to your bookmarks bar. Open your Scholar profile, click it, then come back here and paste.', 'google-scholar-wp'); ?>
                   </p>
 
                   <p>
                     <a href="<?php echo esc_url($bookmarklet_href, array('javascript')); ?>"
                       class="button button-secondary"
                       onclick="alert('Drag this button to your bookmarks bar instead of clicking it.'); return false;">
-                      📥 <?php _e('Import Scholar Data', 'wp-google-scholar'); ?>
+                      📥 <?php esc_html_e('Import Scholar Data', 'google-scholar-wp'); ?>
                     </a>
                     <a href="https://scholar.google.com/citations?user=<?php echo esc_attr(rawurlencode($options['profile_id'])); ?>&hl=en"
                       target="_blank" rel="noopener noreferrer" class="button">
-                      <?php _e('Open my profile', 'wp-google-scholar'); ?>
+                      <?php esc_html_e('Open my profile', 'google-scholar-wp'); ?>
                     </a>
                   </p>
 
                   <p class="description">
-                    <?php _e("No bookmarklet? Open your profile page above, select all (Ctrl/Cmd+A), copy (Ctrl/Cmd+C), and paste below. The Import box keeps the copied HTML when your browser provides it; if it cannot, open View Source and copy that page instead. First use ‘Replace profile data’. For later pages (&cstart=20, &cstart=40, ...), use ‘Add publications from another page’ so the existing list is kept.", 'wp-google-scholar'); ?>
+                    <?php esc_html_e("No bookmarklet? Open your profile page above, select all (Ctrl/Cmd+A), copy (Ctrl/Cmd+C), and paste below. The Import box keeps the copied HTML when your browser provides it; if it cannot, open View Source and copy that page instead. First use ‘Replace profile data’. For later pages (&cstart=20, &cstart=40, ...), use ‘Add publications from another page’ so the existing list is kept.", 'google-scholar-wp'); ?>
                   </p>
 
-                  <form method="post" action="<?php echo admin_url('admin-post.php'); ?>" id="scholar-import-form">
+                  <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" id="scholar-import-form">
                     <input type="hidden" name="action" value="import_scholar_profile">
                     <?php wp_nonce_field('import_scholar_profile', 'scholar_import_nonce'); ?>
 
-                    <label for="scholar_import_profile_id"><?php _e('Profile to import', 'wp-google-scholar'); ?></label>
+                    <label for="scholar_import_profile_id"><?php esc_html_e('Profile to import', 'google-scholar-wp'); ?></label>
                     <select name="scholar_target_profile_id" id="scholar_import_profile_id">
                       <?php foreach ($registered_profile_ids as $registered_id): ?>
                         <option value="<?php echo esc_attr($registered_id); ?>"><?php echo esc_html($registered_id); ?></option>
@@ -334,24 +334,24 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
 
                     <textarea name="scholar_import_content" id="scholar_import_content" rows="8"
                       class="large-text code"
-                      placeholder="<?php esc_attr_e('Paste bookmarklet JSON or Scholar page HTML here...', 'wp-google-scholar'); ?>"></textarea>
+                      placeholder="<?php esc_attr_e('Paste bookmarklet JSON or Scholar page HTML here...', 'google-scholar-wp'); ?>"></textarea>
                     <p id="scholar-import-paste-status" class="description" aria-live="polite"></p>
 
                     <div class="scholar-form-actions">
                       <button type="submit" name="scholar_import_mode" value="replace" class="button button-primary">
-                        <?php _e('Replace profile data', 'wp-google-scholar'); ?>
+                        <?php esc_html_e('Replace profile data', 'google-scholar-wp'); ?>
                       </button>
                       <button type="submit" name="scholar_import_mode" value="append" class="button button-secondary">
-                        <?php _e('Add publications from another page', 'wp-google-scholar'); ?>
+                        <?php esc_html_e('Add publications from another page', 'google-scholar-wp'); ?>
                       </button>
                     </div>
                   </form>
 
                   <hr class="scholar-sync-divider">
 
-                  <h3><?php _e('Automated Sync (optional)', 'wp-google-scholar'); ?></h3>
+                  <h3><?php esc_html_e('Automated Sync (optional)', 'google-scholar-wp'); ?></h3>
                   <p class="description">
-                    <?php _e("Skip the manual paste: download a ready-to-run script, add one line to your own computer's cron/launchd, and this profile stays in sync automatically - fetched from your machine's network, never the server.", 'wp-google-scholar'); ?>
+                    <?php esc_html_e("Skip the manual paste: download a ready-to-run script, add one line to your own computer's cron/launchd, and this profile stays in sync automatically - fetched from your machine's network, never the server.", 'google-scholar-wp'); ?>
                   </p>
 
                   <?php if (!empty($sync_credentials)): ?>
@@ -359,12 +359,12 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
                       <?php foreach ($sync_credentials as $credential): ?>
                         <li>
                           <?php echo esc_html($credential['name']); ?>
-                          <form method="post" action="<?php echo admin_url('admin-post.php'); ?>" class="scholar-sync-revoke-form">
+                          <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="scholar-sync-revoke-form">
                             <input type="hidden" name="action" value="revoke_scholar_sync_credential">
                             <input type="hidden" name="uuid" value="<?php echo esc_attr($credential['uuid']); ?>">
                             <?php wp_nonce_field('revoke_scholar_sync_credential', 'scholar_sync_revoke_nonce'); ?>
                             <button type="submit" class="button-link scholar-sync-revoke-btn">
-                              <?php _e('Revoke', 'wp-google-scholar'); ?>
+                              <?php esc_html_e('Revoke', 'google-scholar-wp'); ?>
                             </button>
                           </form>
                         </li>
@@ -373,20 +373,20 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
                   <?php endif; ?>
 
                   <p class="scholar-sync-warning">
-                    ⚠ <?php _e('The downloaded file contains a live credential - treat it like a password. Do not commit it to version control or share it. Downloading again issues a new credential and revokes the old one.', 'wp-google-scholar'); ?>
+                    ⚠ <?php esc_html_e('The downloaded file contains a live credential - treat it like a password. Do not commit it to version control or share it. Downloading again issues a new credential and revokes the old one.', 'google-scholar-wp'); ?>
                   </p>
 
-                  <form method="post" action="<?php echo admin_url('admin-post.php'); ?>">
+                  <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                     <input type="hidden" name="action" value="download_scholar_sync_script">
                     <?php wp_nonce_field('download_scholar_sync_script', 'scholar_sync_download_nonce'); ?>
-                    <label for="scholar_sync_profile_id"><?php _e('Profile to sync', 'wp-google-scholar'); ?></label>
+                    <label for="scholar_sync_profile_id"><?php esc_html_e('Profile to sync', 'google-scholar-wp'); ?></label>
                     <select name="scholar_target_profile_id" id="scholar_sync_profile_id">
                       <?php foreach ($registered_profile_ids as $registered_id): ?>
                         <option value="<?php echo esc_attr($registered_id); ?>"><?php echo esc_html($registered_id); ?></option>
                       <?php endforeach; ?>
                     </select>
                     <button type="submit" class="button button-secondary">
-                      ⬇ <?php _e('Download Sync Script', 'wp-google-scholar'); ?>
+                      ⬇ <?php esc_html_e('Download Sync Script', 'google-scholar-wp'); ?>
                     </button>
                   </form>
                 <?php endif; ?>
@@ -394,25 +394,25 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
             <?php else: ?>
               <!-- Separate Refresh Form with Loading Indicators -->
               <div class="scholar-refresh-section">
-                <h3><?php _e('Manual Refresh', 'wp-google-scholar'); ?></h3>
+                <h3><?php esc_html_e('Manual Refresh', 'google-scholar-wp'); ?></h3>
 
                 <div class="scholar-loading-message" id="scholar-loading-message">
-                  <strong>🔄 <?php _e('Refreshing Profile Data...', 'wp-google-scholar'); ?></strong>
+                  <strong>🔄 <?php esc_html_e('Refreshing Profile Data...', 'google-scholar-wp'); ?></strong>
                   <div class="scholar-progress-steps" id="scholar-progress-steps">
-                    <div class="scholar-progress-step" id="step-1">📡 <?php _e('Connecting to Google Scholar...', 'wp-google-scholar'); ?></div>
-                    <div class="scholar-progress-step" id="step-2">📄 <?php _e('Fetching profile information...', 'wp-google-scholar'); ?></div>
-                    <div class="scholar-progress-step" id="step-3">📚 <?php _e('Loading publications...', 'wp-google-scholar'); ?></div>
-                    <div class="scholar-progress-step" id="step-4">👥 <?php _e('Processing co-authors...', 'wp-google-scholar'); ?></div>
-                    <div class="scholar-progress-step" id="step-5">💾 <?php _e('Saving data...', 'wp-google-scholar'); ?></div>
+                    <div class="scholar-progress-step" id="step-1">📡 <?php esc_html_e('Connecting to Google Scholar...', 'google-scholar-wp'); ?></div>
+                    <div class="scholar-progress-step" id="step-2">📄 <?php esc_html_e('Fetching profile information...', 'google-scholar-wp'); ?></div>
+                    <div class="scholar-progress-step" id="step-3">📚 <?php esc_html_e('Loading publications...', 'google-scholar-wp'); ?></div>
+                    <div class="scholar-progress-step" id="step-4">👥 <?php esc_html_e('Processing co-authors...', 'google-scholar-wp'); ?></div>
+                    <div class="scholar-progress-step" id="step-5">💾 <?php esc_html_e('Saving data...', 'google-scholar-wp'); ?></div>
                   </div>
-                  <p><em><?php _e('This may take 30-60 seconds for large profiles. Please do not close this page.', 'wp-google-scholar'); ?></em></p>
+                  <p><em><?php esc_html_e('This may take 30-60 seconds for large profiles. Please do not close this page.', 'google-scholar-wp'); ?></em></p>
                 </div>
 
-                <form method="post" action="<?php echo admin_url('admin-post.php'); ?>" id="scholar-refresh-form">
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" id="scholar-refresh-form">
                   <input type="hidden" name="action" value="refresh_scholar_profile">
                   <?php wp_nonce_field('refresh_scholar_profile', 'scholar_refresh_nonce'); ?>
 
-                  <label for="scholar_refresh_profile_id"><?php _e('Profile to refresh', 'wp-google-scholar'); ?></label>
+                  <label for="scholar_refresh_profile_id"><?php esc_html_e('Profile to refresh', 'google-scholar-wp'); ?></label>
                   <select name="scholar_target_profile_id" id="scholar_refresh_profile_id">
                     <?php foreach ($registered_profile_ids as $registered_id): ?>
                       <option value="<?php echo esc_attr($registered_id); ?>"><?php echo esc_html($registered_id); ?></option>
@@ -424,7 +424,7 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
                       name="refresh_profile"
                       class="button button-secondary"
                       id="scholar-refresh-btn"
-                      value="<?php esc_attr_e('Refresh Profile Data', 'wp-google-scholar'); ?>"
+                      value="<?php esc_attr_e('Refresh Profile Data', 'google-scholar-wp'); ?>"
                       <?php echo !$can_refresh ? 'disabled' : ''; ?>>
 
                     <?php if (!$can_refresh): ?>
@@ -432,7 +432,7 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
                         <?php
                         // translators: %d is the number of minutes remaining
                         printf(
-                          __('Please wait %d more minute(s) before refreshing again.', 'wp-google-scholar'),
+                          esc_html__('Please wait %d more minute(s) before refreshing again.', 'google-scholar-wp'),
                           $cooldown_remaining
                         ); ?>
                       </span>
@@ -440,9 +440,9 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
                   </div>
 
                   <p class="description">
-                    <?php _e('Manually refresh data from Google Scholar. Large profiles may take several minutes to process.', 'wp-google-scholar'); ?>
+                    <?php esc_html_e('Manually refresh data from Google Scholar. Large profiles may take several minutes to process.', 'google-scholar-wp'); ?>
                     <?php if ($can_refresh): ?>
-                      <br><em><?php _e('💡 Tip: This is useful after adding new publications to your Google Scholar profile.', 'wp-google-scholar'); ?></em>
+                      <br><em><?php esc_html_e('💡 Tip: This is useful after adding new publications to your Google Scholar profile.', 'google-scholar-wp'); ?></em>
                     <?php endif; ?>
                   </p>
                 </form>
@@ -494,11 +494,11 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
             <div class="scholar-status-stats">
               <div class="scholar-stat">
                 <span class="scholar-stat-number"><?php echo number_format($profile_data['citations']['total']); ?></span>
-                <span class="scholar-stat-label"><?php _e('Citations', 'wp-google-scholar'); ?></span>
+                <span class="scholar-stat-label"><?php esc_html_e('Citations', 'google-scholar-wp'); ?></span>
               </div>
               <div class="scholar-stat">
                 <span class="scholar-stat-number"><?php echo count($profile_data['publications']); ?></span>
-                <span class="scholar-stat-label"><?php _e('Publications', 'wp-google-scholar'); ?></span>
+                <span class="scholar-stat-label"><?php esc_html_e('Publications', 'google-scholar-wp'); ?></span>
               </div>
               <div class="scholar-stat">
                 <span class="scholar-stat-number"><?php echo esc_html($profile_data['citations']['h_index']); ?></span>
@@ -506,7 +506,7 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
               </div>
               <div class="scholar-stat">
                 <span class="scholar-stat-number"><?php echo count($profile_data['coauthors']); ?></span>
-                <span class="scholar-stat-label"><?php _e('Co-authors', 'wp-google-scholar'); ?></span>
+                <span class="scholar-stat-label"><?php esc_html_e('Co-authors', 'google-scholar-wp'); ?></span>
               </div>
             </div>
 
@@ -515,16 +515,16 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
               <div class="scholar-update-info">
                 <?php if ($last_update): ?>
                   <span class="scholar-last-update">
-                    <strong><?php _e('Last updated:', 'wp-google-scholar'); ?></strong>
-                    <?php echo date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $last_update); ?>
-                    <small>(<?php echo human_time_diff($last_update, current_time('timestamp')); ?> ago)</small>
+                    <strong><?php esc_html_e('Last updated:', 'google-scholar-wp'); ?></strong>
+                    <?php echo esc_html(date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $last_update)); ?>
+                    <small>(<?php echo esc_html(human_time_diff($last_update, current_time('timestamp'))); ?> ago)</small>
                   </span>
                 <?php endif; ?>
 
                 <?php if ($next_scheduled): ?>
                   <span class="scholar-next-update">
-                    <strong><?php _e('Next update:', 'wp-google-scholar'); ?></strong>
-                    <?php echo human_time_diff($next_scheduled, current_time('timestamp')); ?>
+                    <strong><?php esc_html_e('Next update:', 'google-scholar-wp'); ?></strong>
+                    <?php echo esc_html(human_time_diff($next_scheduled, current_time('timestamp'))); ?>
                   </span>
                 <?php endif; ?>
               </div>
@@ -534,19 +534,19 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
           <div class="scholar-status-card scholar-status-empty">
             <div class="scholar-status-empty-content">
               <span class="dashicons dashicons-admin-users"></span>
-              <h3><?php _e('No profile data', 'wp-google-scholar'); ?></h3>
-              <p><?php _e('Configure your profile ID above, then use step 3 to fetch your data.', 'wp-google-scholar'); ?></p>
+              <h3><?php esc_html_e('No profile data', 'google-scholar-wp'); ?></h3>
+              <p><?php esc_html_e('Configure your profile ID above, then use step 3 to fetch your data.', 'google-scholar-wp'); ?></p>
 
               <?php if (!empty($options['profile_id'])): ?>
                 <div class="scholar-empty-actions">
-                  <p><strong><?php _e('Profile ID set:', 'wp-google-scholar'); ?></strong> <?php echo esc_html($options['profile_id']); ?></p>
+                  <p><strong><?php esc_html_e('Profile ID set:', 'google-scholar-wp'); ?></strong> <?php echo esc_html($options['profile_id']); ?></p>
                   <p><em><?php echo $update_method === 'browser'
-                      ? esc_html__('Use the Browser-Assisted Import panel in step 3 to load your data.', 'wp-google-scholar')
-                      : esc_html__('Click "Refresh Profile Data" in step 3 to load your data.', 'wp-google-scholar'); ?></em></p>
+                      ? esc_html__('Use the Browser-Assisted Import panel in step 3 to load your data.', 'google-scholar-wp')
+                      : esc_html__('Click "Refresh Profile Data" in step 3 to load your data.', 'google-scholar-wp'); ?></em></p>
                 </div>
               <?php else: ?>
                 <div class="scholar-empty-actions">
-                  <p><em><?php _e('Start by entering your Google Scholar Profile ID above.', 'wp-google-scholar'); ?></em></p>
+                  <p><em><?php esc_html_e('Start by entering your Google Scholar Profile ID above.', 'google-scholar-wp'); ?></em></p>
                 </div>
               <?php endif; ?>
             </div>
@@ -555,15 +555,15 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
 
         <!-- Enhanced Usage Instructions -->
         <div class="scholar-usage-card">
-          <h3><?php _e('Usage Guide', 'wp-google-scholar'); ?></h3>
+          <h3><?php esc_html_e('Usage Guide', 'google-scholar-wp'); ?></h3>
 
           <!-- Basic Shortcode -->
           <div class="scholar-usage-section">
-            <h4><?php _e('📝 Basic Usage', 'wp-google-scholar'); ?></h4>
-            <p><?php _e('Add to any post or page:', 'wp-google-scholar'); ?></p>
+            <h4><?php esc_html_e('📝 Basic Usage', 'google-scholar-wp'); ?></h4>
+            <p><?php esc_html_e('Add to any post or page:', 'google-scholar-wp'); ?></p>
             <div class="scholar-shortcode">
               <code>[scholar_profile]</code>
-              <button type="button" class="scholar-copy-btn" onclick="navigator.clipboard.writeText('[scholar_profile]')" title="<?php esc_attr_e('Copy shortcode', 'wp-google-scholar'); ?>">
+              <button type="button" class="scholar-copy-btn" onclick="navigator.clipboard.writeText('[scholar_profile]')" title="<?php esc_attr_e('Copy shortcode', 'google-scholar-wp'); ?>">
                 <span class="dashicons dashicons-admin-page"></span>
               </button>
             </div>
@@ -571,22 +571,22 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
 
           <!-- Sorting Options -->
           <div class="scholar-usage-section">
-            <h4><?php _e('📊 Sorting Options', 'wp-google-scholar'); ?></h4>
-            <p><?php _e('Sort publications by year, citations, or title:', 'wp-google-scholar'); ?></p>
+            <h4><?php esc_html_e('📊 Sorting Options', 'google-scholar-wp'); ?></h4>
+            <p><?php esc_html_e('Sort publications by year, citations, or title:', 'google-scholar-wp'); ?></p>
             <div class="scholar-code-examples">
               <code>[scholar_profile sort_by="year" sort_order="desc"]</code>
               <code>[scholar_profile sort_by="citations" sort_order="desc"]</code>
               <code>[scholar_profile sort_by="title" sort_order="asc"]</code>
             </div>
             <p class="scholar-usage-tip">
-              <?php _e('💡 <strong>Interactive Sorting:</strong> Readers can also click column headers to sort the table dynamically.', 'wp-google-scholar'); ?>
+              <?php echo wp_kses_post(__('💡 <strong>Interactive Sorting:</strong> Readers can also click column headers to sort the table dynamically.', 'google-scholar-wp')); ?>
             </p>
           </div>
 
           <!-- Pagination -->
           <div class="scholar-usage-section">
-            <h4><?php _e('📄 Pagination', 'wp-google-scholar'); ?></h4>
-            <p><?php _e('Control publications per page:', 'wp-google-scholar'); ?></p>
+            <h4><?php esc_html_e('📄 Pagination', 'google-scholar-wp'); ?></h4>
+            <p><?php esc_html_e('Control publications per page:', 'google-scholar-wp'); ?></p>
             <div class="scholar-code-examples">
               <code>[scholar_profile per_page="10"]</code>
               <code>[scholar_profile per_page="25"]</code>
@@ -598,50 +598,50 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
         <div class="scholar-notice-card">
           <h3>
             <span class="dashicons dashicons-warning"></span>
-            <?php _e('Common Issues & Solutions', 'wp-google-scholar'); ?>
+            <?php esc_html_e('Common Issues & Solutions', 'google-scholar-wp'); ?>
           </h3>
 
           <?php if ($update_method === 'server'): ?>
             <!-- HTTP 403 Blocked Access -->
             <div class="scholar-troubleshooting-section">
-              <h4>🔒 <?php _e('Server Access Blocked (HTTP 403)', 'wp-google-scholar'); ?></h4>
-              <p><?php _e('Most common issue. Google Scholar temporarily blocks server IPs.', 'wp-google-scholar'); ?></p>
+              <h4>🔒 <?php esc_html_e('Server Access Blocked (HTTP 403)', 'google-scholar-wp'); ?></h4>
+              <p><?php esc_html_e('Most common issue. Google Scholar temporarily blocks server IPs.', 'google-scholar-wp'); ?></p>
               <ul class="scholar-notice-list">
-                <li><?php _e('Wait 1-2 hours and try again', 'wp-google-scholar'); ?></li>
-                <li><?php _e('Contact your hosting provider if it persists', 'wp-google-scholar'); ?></li>
-                <li><?php _e('Use monthly updates instead of daily/weekly', 'wp-google-scholar'); ?></li>
-                <li><?php _e('Still blocked? Switch to Browser mode in step 2 - it fetches through your own browser instead of the server.', 'wp-google-scholar'); ?></li>
+                <li><?php esc_html_e('Wait 1-2 hours and try again', 'google-scholar-wp'); ?></li>
+                <li><?php esc_html_e('Contact your hosting provider if it persists', 'google-scholar-wp'); ?></li>
+                <li><?php esc_html_e('Use monthly updates instead of daily/weekly', 'google-scholar-wp'); ?></li>
+                <li><?php esc_html_e('Still blocked? Switch to Browser mode in step 2 - it fetches through your own browser instead of the server.', 'google-scholar-wp'); ?></li>
               </ul>
             </div>
           <?php else: ?>
             <!-- Paste Not Recognized -->
             <div class="scholar-troubleshooting-section">
-              <h4>📋 <?php _e('Pasted Content Not Recognized', 'wp-google-scholar'); ?></h4>
-              <p><?php _e('Most common issue in Browser mode. The paste box did not receive a full Scholar profile page.', 'wp-google-scholar'); ?></p>
+              <h4>📋 <?php esc_html_e('Pasted Content Not Recognized', 'google-scholar-wp'); ?></h4>
+              <p><?php esc_html_e('Most common issue in Browser mode. The paste box did not receive a full Scholar profile page.', 'google-scholar-wp'); ?></p>
               <ul class="scholar-notice-list">
-                <li><?php _e('Use the bookmarklet - it captures the page more reliably than copy/paste', 'wp-google-scholar'); ?></li>
-                <li><?php _e('If pasting manually, use View Source and copy that instead of the rendered page', 'wp-google-scholar'); ?></li>
-                <li><?php _e('For a later page (&cstart=20, ...), use "Add publications from another page", not "Replace profile data"', 'wp-google-scholar'); ?></li>
-                <li><?php _e('"Add publications" requires the main profile to be imported first with "Replace profile data"', 'wp-google-scholar'); ?></li>
+                <li><?php esc_html_e('Use the bookmarklet - it captures the page more reliably than copy/paste', 'google-scholar-wp'); ?></li>
+                <li><?php esc_html_e('If pasting manually, use View Source and copy that instead of the rendered page', 'google-scholar-wp'); ?></li>
+                <li><?php esc_html_e('For a later page (&cstart=20, ...), use "Add publications from another page", not "Replace profile data"', 'google-scholar-wp'); ?></li>
+                <li><?php esc_html_e('"Add publications" requires the main profile to be imported first with "Replace profile data"', 'google-scholar-wp'); ?></li>
               </ul>
             </div>
           <?php endif; ?>
 
           <!-- Profile Issues -->
           <div class="scholar-troubleshooting-section">
-            <h4>👤 <?php _e('Profile Not Found (HTTP 404)', 'wp-google-scholar'); ?></h4>
+            <h4>👤 <?php esc_html_e('Profile Not Found (HTTP 404)', 'google-scholar-wp'); ?></h4>
             <ul class="scholar-notice-list">
-              <li><?php _e('Double-check your Profile ID format', 'wp-google-scholar'); ?></li>
-              <li><?php _e('Make sure your profile is set to public', 'wp-google-scholar'); ?></li>
-              <li><?php _e('Test the profile URL in your browser first', 'wp-google-scholar'); ?></li>
+              <li><?php esc_html_e('Double-check your Profile ID format', 'google-scholar-wp'); ?></li>
+              <li><?php esc_html_e('Make sure your profile is set to public', 'google-scholar-wp'); ?></li>
+              <li><?php esc_html_e('Test the profile URL in your browser first', 'google-scholar-wp'); ?></li>
             </ul>
           </div>
 
           <p class="scholar-notice-recommendation">
-            <strong><?php _e('💡 Best Practice:', 'wp-google-scholar'); ?></strong>
+            <strong><?php esc_html_e('💡 Best Practice:', 'google-scholar-wp'); ?></strong>
             <?php echo $update_method === 'server'
-              ? esc_html__('Set up automatic monthly updates and avoid frequent manual refreshes to prevent IP blocks.', 'wp-google-scholar')
-              : esc_html__('Import the main profile page first, then add later pages one at a time using "Add publications from another page".', 'wp-google-scholar'); ?>
+              ? esc_html__('Set up automatic monthly updates and avoid frequent manual refreshes to prevent IP blocks.', 'google-scholar-wp')
+              : esc_html__('Import the main profile page first, then add later pages one at a time using "Add publications from another page".', 'google-scholar-wp'); ?>
           </p>
         </div>
 
@@ -700,10 +700,10 @@ $cooldown_remaining = $can_refresh ? 0 : ceil(($cooldown_period - $time_since_re
           event.preventDefault();
           importTextarea.value = html;
           if (importPasteStatus) {
-            importPasteStatus.textContent = '<?php echo esc_js(__('Copied page HTML detected and ready to import.', 'wp-google-scholar')); ?>';
+            importPasteStatus.textContent = '<?php echo esc_js(__('Copied page HTML detected and ready to import.', 'google-scholar-wp')); ?>';
           }
         } else if (importPasteStatus) {
-          importPasteStatus.textContent = '<?php echo esc_js(__('Pasted text did not contain page HTML. Use the bookmarklet or copy from View Source.', 'wp-google-scholar')); ?>';
+          importPasteStatus.textContent = '<?php echo esc_js(__('Pasted text did not contain page HTML. Use the bookmarklet or copy from View Source.', 'google-scholar-wp')); ?>';
         }
       });
     }

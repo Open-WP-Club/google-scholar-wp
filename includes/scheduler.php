@@ -74,19 +74,19 @@ class Scheduler
     $intervals = array(
       'daily' => array(
         'interval' => 86400,
-        'display' => __('Daily', 'wp-google-scholar')
+        'display' => __('Daily', 'google-scholar-wp')
       ),
       'weekly' => array(
         'interval' => 604800,
-        'display' => __('Weekly', 'wp-google-scholar')
+        'display' => __('Weekly', 'google-scholar-wp')
       ),
       'monthly' => array(
         'interval' => 2592000,
-        'display' => __('Monthly', 'wp-google-scholar')
+        'display' => __('Monthly', 'google-scholar-wp')
       ),
       'yearly' => array(
         'interval' => 31536000,
-        'display' => __('Yearly', 'wp-google-scholar')
+        'display' => __('Yearly', 'google-scholar-wp')
       )
     );
 
