@@ -17,6 +17,10 @@ class SchedulerTest extends TestCase
         parent::setUp();
         Monkey\setUp();
 
+        Functions\when('sanitize_text_field')->alias(function ($str) {
+            return trim((string) $str);
+        });
+
         // Reset the static $hooks_registered flag
         $reflection = new \ReflectionClass(Scheduler::class);
         $prop = $reflection->getProperty('hooks_registered');
@@ -307,10 +311,6 @@ class SchedulerTest extends TestCase
     {
         $scheduler = $this->createSchedulerWithoutConstructor();
 
-        Functions\when('sanitize_text_field')->alias(function ($str) {
-            return trim((string) $str);
-        });
-
         Functions\expect('get_option')
             ->with('scholar_profile_settings', [])
             ->andReturn(['profile_id' => 'testprofile123']);
@@ -341,10 +341,6 @@ class SchedulerTest extends TestCase
     public function test_clear_stale_data_clears_additional_profiles_too(): void
     {
         $scheduler = $this->createSchedulerWithoutConstructor();
-
-        Functions\when('sanitize_text_field')->alias(function ($str) {
-            return trim((string) $str);
-        });
 
         Functions\expect('get_option')
             ->once()
@@ -466,10 +462,6 @@ class SchedulerTest extends TestCase
         // IDs" and leaves the primary Profile ID blank must still get cron
         // updates for those additional profiles.
         $scheduler = $this->createSchedulerWithoutConstructor();
-
-        Functions\when('sanitize_text_field')->alias(function ($str) {
-            return trim((string) $str);
-        });
 
         Functions\expect('get_option')
             ->once()

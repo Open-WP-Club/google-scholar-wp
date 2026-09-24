@@ -8,6 +8,8 @@ if (!defined('ABSPATH')) {
 
 class SEO
 {
+  private array $output_hashes = array();
+
   public function __construct()
   {
     // Register early so tags land in <head>, before the shortcode runs during the_content.
@@ -65,6 +67,14 @@ class SEO
     if (empty($data)) {
       return;
     }
+
+    // Same profile data can reach this method more than once per request
+    // (e.g. the same shortcode appearing twice); skip re-emitting identical tags.
+    $hash = md5(serialize($data));
+    if (isset($this->output_hashes[$hash])) {
+      return;
+    }
+    $this->output_hashes[$hash] = true;
 
     echo "\n<!-- Scholar Profile Academic Tags -->\n";
 
