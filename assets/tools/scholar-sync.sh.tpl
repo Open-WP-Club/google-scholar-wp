@@ -74,7 +74,6 @@ import_page() {
     -u "${WP_USER}:${APP_PASSWORD}" \
     --data-urlencode "content=${html}" \
     --data-urlencode "import_mode=${mode}" \
-    --data-urlencode "profile_id=${PROFILE_ID}" \
     "${IMPORT_URL}")" || fail "Could not reach ${IMPORT_URL} (network error)"
 
   http_code="${response##*$'\n'}"

@@ -155,16 +155,6 @@ register_uninstall_hook(__FILE__, 'wp_scholar_uninstall');
 
 function wp_scholar_uninstall()
 {
-  // Remove per-profile options for any additional profiles before the
-  // default profile's ID (needed to find them) is deleted below.
-  $settings = get_option('scholar_profile_settings', array());
-  $default_profile_id = $settings['profile_id'] ?? '';
-  foreach (WPScholar\ProfileStore::get_ids($default_profile_id) as $profile_id) {
-    if ($profile_id !== WPScholar\ProfileStore::normalize_id($default_profile_id)) {
-      WPScholar\ProfileStore::delete_all($profile_id, $default_profile_id);
-    }
-  }
-
   // Remove all plugin options
   delete_option('scholar_profile_settings');
   delete_option('scholar_profile_data');
@@ -173,7 +163,6 @@ function wp_scholar_uninstall()
   delete_option('scholar_profile_data_status');
   delete_option('scholar_profile_consecutive_failures');
   delete_option('scholar_profile_last_error_details');
-  delete_option('scholar_profile_profiles_index');
 
   // Remove all cached images from media library
   $attachments = get_posts(array(

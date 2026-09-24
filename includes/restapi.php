@@ -41,7 +41,6 @@ class RestApi
       'args' => array(
         'content' => array('required' => true, 'type' => 'string'),
         'import_mode' => array('required' => true, 'type' => 'string', 'enum' => array('replace', 'append')),
-        'profile_id' => array('required' => false, 'type' => 'string'),
       ),
     ));
   }
@@ -70,7 +69,7 @@ class RestApi
     $content = (string) $request->get_param('content');
     $import_mode = $request->get_param('import_mode') === 'append' ? 'append' : 'replace';
 
-    $result = $this->settings->process_import($content, $import_mode, 'sync', (string) $request->get_param('profile_id'));
+    $result = $this->settings->process_import($content, $import_mode, 'sync');
 
     if (isset($result['error'])) {
       $type = $result['error']['type'] ?? 'unknown';
